@@ -1,0 +1,10 @@
+{
+  "_comment": "Valori di default per i parametri CloudFormation. Vengono pre-caricati prima del parsing. I parametri inseriti manualmente nel textarea li sovrascrivono.",
+
+  "ProjectName": "pn",
+
+  "TemplateBucketBaseUrl": "https://s3.eu-south-1.amazonaws.com/pn-bucket/v1",
+
+  "AWS::Region":     "eu-south-1",
+  "AWS::AccountId":  "123456789012"
+}

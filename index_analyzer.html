@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Microservice Analyzer</title>
+    <link rel="stylesheet" href="https://pyscript.net/releases/2025.11.2/core.css" />
+    <script type="module" src="https://pyscript.net/releases/2025.11.2/core.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      .btn-primary { background-color: #0066CC; }
+      .btn-primary:hover { background-color: #0052a3; }
+      .btn-primary:disabled { background-color: #80b3e6; cursor: not-allowed; }
+      .tab-active { background-color: #0066CC; color: #fff; }
+      .tab-inactive { background-color: #f1f5f9; color: #475569; }
+      .tab-inactive:hover { background-color: #e2e8f0; }
+      .card-border { border-left: 3px solid #0066CC; }
+      .stat-card { background-color: #0066CC; }
+      .text-brand { color: #0066CC; }
+      .border-brand { border-color: #0066CC; }
+      .ring-brand:focus { outline: none; border-color: #0066CC; box-shadow: 0 0 0 3px rgba(0,102,204,0.15); }
+    </style>
+  </head>
+  <body class="bg-slate-100 min-h-screen">
+
+    <!-- Header bar -->
+    <header style="background-color:#0066CC" class="shadow-md">
+      <div class="max-w-7xl mx-auto px-6 py-4 flex items-center gap-3">
+        <span class="text-2xl">🔬</span>
+        <div>
+          <h1 class="text-white font-bold text-xl leading-tight tracking-tight">Microservice Analyzer</h1>
+          <p class="text-blue-200 text-xs mt-0.5">AWS CloudFormation · ECS · DynamoDB · SQS · Lambda</p>
+        </div>
+      </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-6 py-8">
+
+      <!-- Input card -->
+      <div class="bg-white rounded-lg border border-slate-200 shadow-sm p-6 mb-6">
+        <label for="repoUrl" class="block text-sm font-semibold text-slate-700 mb-1.5">
+          GitHub Repository URL
+        </label>
+        <div class="flex gap-3">
+          <input
+            type="text"
+            id="repoUrl"
+            placeholder="https://github.com/org/repo"
+            value="https://github.com/pagopa/pn-paper-tracker"
+            class="flex-1 px-4 py-2.5 border border-slate-300 rounded-md text-sm ring-brand transition-colors"
+          />
+          <button
+            id="analyzeBtn"
+            py-click="analyze_repo"
+            class="btn-primary text-white px-6 py-2.5 rounded-md text-sm font-semibold transition-colors whitespace-nowrap"
+          >
+            Analizza
+          </button>
+        </div>
+      </div>
+
+      <!-- Output log -->
+      <div id="output" class="bg-white rounded-lg border border-slate-200 shadow-sm p-5 mb-6 font-mono text-xs leading-relaxed text-slate-600 min-h-24"></div>
+
+      <!-- Results -->
+      <div id="results" class="bg-white rounded-lg border border-slate-200 shadow-sm p-6 hidden">
+        <!-- Stats row -->
+        <div id="stats" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6"></div>
+
+        <!-- Tab bar -->
+        <div id="tabs" class="flex gap-1.5 mb-6 border-b border-slate-200 pb-3 flex-wrap"></div>
+
+        <!-- Tab panels -->
+        <div id="tab-overview"></div>
+        <div id="tab-architecture" class="hidden"></div>
+        <div id="tab-dynamo" class="hidden"></div>
+        <div id="tab-sqs" class="hidden"></div>
+        <div id="tab-lambda" class="hidden"></div>
+        <div id="tab-dependencies" class="hidden"></div>
+        <div id="tab-files" class="hidden"></div>
+      </div>
+
+    </main>
+
+    <script>
+      window.switchTab = function(tabName) {
+        document.querySelectorAll('[id^="tab-"]').forEach(c => c.classList.add('hidden'));
+        document.querySelectorAll('.tab-btn').forEach(t => {
+          t.className = t.className.replace('tab-active', 'tab-inactive');
+        });
+        document.getElementById('tab-' + tabName).classList.remove('hidden');
+        const active = document.querySelector('[data-tab="' + tabName + '"]');
+        if (active) active.className = active.className.replace('tab-inactive', 'tab-active');
+      };
+
+      window.renderGraph = function(graph) {
+        const container = document.getElementById('tab-architecture');
+        if (!container) return;
+        if (!graph || !graph.nodes || graph.nodes.length === 0) {
+          container.innerHTML = '<div class="text-slate-400 text-center py-16">Nessun grafo da visualizzare</div>';
+          return;
+        }
+
+        const TYPE_COLORS = {
+          microservice: '#0066CC',
+          ecs: '#0284c7',
+          lambda: '#d97706',
+          sqs: '#059669',
+          dynamodb: '#7c3aed',
+          external: '#dc2626',
+        };
+        const TYPE_ICONS = {
+          microservice: '🔬', ecs: '🐳', lambda: '⚡',
+          sqs: '📨', dynamodb: '💾', external: '🌐',
+        };
+        const TYPE_LABELS = {
+          microservice: 'Microservice', ecs: 'ECS', lambda: 'Lambda',
+          sqs: 'SQS', dynamodb: 'DynamoDB', external: 'External',
+        };
+
+        const W = Math.max(container.clientWidth || 0, 600);
+        const H = 560;
+        const cx = W / 2, cy = H / 2;
+        const R = Math.min(W, H) * 0.36;
+
+        const msNode = graph.nodes.find(n => n.type === 'microservice');
+        const others = graph.nodes.filter(n => n.type !== 'microservice');
+        const positions = {};
+        if (msNode) positions[msNode.id] = { x: cx, y: cy };
+        others.forEach((n, i) => {
+          const angle = (2 * Math.PI * i / Math.max(1, others.length)) - Math.PI / 2;
+          positions[n.id] = { x: cx + R * Math.cos(angle), y: cy + R * Math.sin(angle) };
+        });
+
+        let lines = '', circles = '';
+        graph.edges.forEach(e => {
+          const from = positions[e.from], to = positions[e.to];
+          if (!from || !to) return;
+          const dx = to.x - from.x, dy = to.y - from.y;
+          const len = Math.sqrt(dx * dx + dy * dy) || 1;
+          const nr = 32;
+          lines += `<line x1="${(from.x + dx/len*nr).toFixed(1)}" y1="${(from.y + dy/len*nr).toFixed(1)}" x2="${(to.x - dx/len*(nr+10)).toFixed(1)}" y2="${(to.y - dy/len*(nr+10)).toFixed(1)}" stroke="#cbd5e1" stroke-width="1.5" marker-end="url(#arrow)"/>`;
+        });
+
+        graph.nodes.forEach(n => {
+          const pos = positions[n.id];
+          if (!pos) return;
+          const color = TYPE_COLORS[n.type] || '#94a3b8';
+          const r = n.type === 'microservice' ? 38 : 28;
+          const label = n.label.length > 16 ? n.label.substring(0, 14) + '…' : n.label;
+          circles += `<circle cx="${pos.x.toFixed(1)}" cy="${pos.y.toFixed(1)}" r="${r}" fill="${color}" stroke="white" stroke-width="2.5"/>`;
+          circles += `<text x="${pos.x.toFixed(1)}" y="${pos.y.toFixed(1)}" text-anchor="middle" dominant-baseline="central" font-size="${n.type === 'microservice' ? 22 : 16}">${TYPE_ICONS[n.type] || '?'}</text>`;
+          circles += `<text x="${pos.x.toFixed(1)}" y="${(pos.y + r + 15).toFixed(1)}" text-anchor="middle" font-size="10.5" fill="#334155" font-weight="600" font-family="system-ui,sans-serif">${label}</text>`;
+        });
+
+        const legend = Object.entries(TYPE_LABELS).map(([type, label]) =>
+          `<div class="flex items-center gap-1.5 text-xs text-slate-500">` +
+          `<div class="w-2.5 h-2.5 rounded-full" style="background:${TYPE_COLORS[type] || '#94a3b8'}"></div>` +
+          `<span>${label}</span></div>`
+        ).join('');
+
+        container.innerHTML =
+          `<h2 class="text-lg font-semibold text-slate-800 mb-4">🏗️ Architettura</h2>` +
+          `<div class="bg-slate-50 rounded-lg border border-slate-200 overflow-hidden">` +
+          `<svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">` +
+          `<defs><marker id="arrow" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">` +
+          `<polygon points="0 0,7 2.5,0 5" fill="#94a3b8"/></marker></defs>` +
+          lines + circles + `</svg></div>` +
+          `<div class="flex flex-wrap gap-4 mt-3">${legend}</div>`;
+      };
+    </script>
+
+    <script type="py" src="./analyzer.py" config="./pyscript.toml"></script>
+  </body>
+</html>

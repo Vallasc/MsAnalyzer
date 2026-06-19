@@ -1,0 +1,4 @@
+packages = ["requests", "pyodide-http", "pyyaml"]
+
+[[fetch]]
+files = ["./github_fetcher.py", "./models.py", "./cfn_parser.py", "./pom_parser.py"]

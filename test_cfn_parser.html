@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SEND CloudFormationParser</title>
+  <link rel="stylesheet" href="https://pyscript.net/releases/2025.11.2/core.css" />
+  <script type="module" src="https://pyscript.net/releases/2025.11.2/core.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .btn-primary  { background-color: #0066CC; color: white; }
+    .btn-primary:hover  { background-color: #0052a3; }
+    .btn-preset   { background-color: #f1f5f9; color: #1e293b; border: 1px solid #cbd5e1; }
+    .btn-preset:hover   { background-color: #e2e8f0; }
+    .btn-preset.active  { background-color: #0066CC; color: white; border-color: #0066CC; }
+    .result-ok  { border-left: 4px solid #059669; }
+    .result-err { border-left: 4px solid #dc2626; }
+    details.json-block summary { cursor: pointer; color: #64748b; font-size: 0.7rem; margin-top: 6px; }
+    details.json-block pre { background:#0f172a; color:#86efac; font-size:0.68rem; padding:8px; border-radius:4px; overflow:auto; max-height:260px; margin-top:4px; }
+  </style>
+</head>
+<body class="bg-slate-100 min-h-screen p-8 font-sans">
+
+  <div class="max-w-4xl mx-auto">
+    <header class="mb-8">
+      <h1 class="text-2xl font-bold text-slate-800"><code class="text-blue-600">SEND CloudFormationParser</code></h1>
+      <p class="text-slate-500 text-sm mt-1">Carica un template da un repo predefinito oppure incollalo manualmente.</p>
+    </header>
+
+    <!-- Input YAML -->
+    <div class="bg-white rounded-lg shadow p-6 mb-6">
+
+      <!-- Preset repos -->
+      <div class="mb-4">
+        <p class="text-sm font-semibold text-slate-700 mb-2">Repo predefiniti</p>
+        <div class="flex flex-wrap gap-2">
+          <button class="btn-preset px-3 py-1.5 rounded text-sm font-medium transition-colors"
+            data-owner="pagopa" data-repo="pn-paper-tracker">pagopa/pn-paper-tracker</button>
+          <button class="btn-preset px-3 py-1.5 rounded text-sm font-medium transition-colors"
+            data-owner="pagopa" data-repo="pn-paper-channel">pagopa/pn-paper-channel</button>
+        </div>
+      </div>
+
+      <!-- Due colonne: storage | microservice -->
+      <div class="border-t border-slate-100 pt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="text-sm font-semibold text-slate-700">storage.yml</label>
+            <span id="status-storage" class="text-xs text-slate-400"></span>
+          </div>
+          <textarea id="yaml-storage" rows="16"
+            class="w-full font-mono text-xs border border-slate-300 rounded p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+            placeholder="Incolla storage.yml oppure seleziona un repo..."></textarea>
+        </div>
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="text-sm font-semibold text-slate-700">microservice.yml</label>
+            <span id="status-microservice" class="text-xs text-slate-400"></span>
+          </div>
+          <textarea id="yaml-microservice" rows="16"
+            class="w-full font-mono text-xs border border-slate-300 rounded p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+            placeholder="Incolla microservice.yml oppure seleziona un repo..."></textarea>
+        </div>
+      </div>
+
+      <!-- Parametri opzionali -->
+      <details class="mt-4">
+        <summary class="cursor-pointer text-sm font-semibold text-slate-600">Parametri opzionali (key=value, uno per riga)</summary>
+        <textarea id="params-input" rows="4"
+          class="mt-2 w-full font-mono text-xs border border-slate-300 rounded p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+          placeholder="MicroServiceUniqueName=my-service&#10;CpuValue=256"></textarea>
+      </details>
+
+      <button id="run-btn"
+        class="btn-primary mt-4 px-5 py-2 rounded font-semibold text-sm transition-colors">
+        ▶ Esegui pipeline
+      </button>
+    </div>
+
+    <!-- Output log -->
+    <div class="bg-white rounded-lg shadow p-6 mb-6">
+      <h2 class="text-sm font-semibold text-slate-700 mb-2">Log</h2>
+      <pre id="log" class="bg-slate-900 text-green-400 text-xs rounded p-4 min-h-16 overflow-auto whitespace-pre-wrap"></pre>
+    </div>
+
+    <!-- Risultati -->
+    <div id="results" class="hidden space-y-6">
+
+      <!-- Statistiche -->
+      <div class="bg-white rounded-lg shadow p-6">
+        <h2 class="text-sm font-semibold text-slate-700 mb-4">Risorse trovate</h2>
+        <div id="stats" class="grid grid-cols-2 sm:grid-cols-5 gap-3"></div>
+      </div>
+
+      <!-- ECS -->
+      <div id="section-ecs" class="hidden bg-white rounded-lg shadow p-6">
+        <h2 class="text-sm font-semibold text-slate-700 mb-3">🚀 ECS Services</h2>
+        <div id="list-ecs"></div>
+      </div>
+
+      <!-- DynamoDB -->
+      <div id="section-dynamo" class="hidden bg-white rounded-lg shadow p-6">
+        <h2 class="text-sm font-semibold text-slate-700 mb-3">💾 DynamoDB Tables</h2>
+        <div id="list-dynamo"></div>
+      </div>
+
+      <!-- SQS -->
+      <div id="section-sqs" class="hidden bg-white rounded-lg shadow p-6">
+        <h2 class="text-sm font-semibold text-slate-700 mb-3">📨 SQS Queues</h2>
+        <div id="list-sqs"></div>
+      </div>
+
+      <!-- Lambda -->
+      <div id="section-lambda" class="hidden bg-white rounded-lg shadow p-6">
+        <h2 class="text-sm font-semibold text-slate-700 mb-3">⚡ Lambda Functions</h2>
+        <div id="list-lambda"></div>
+      </div>
+
+      <!-- EventBridge Bus -->
+      <div id="section-eventbuses" class="hidden bg-white rounded-lg shadow p-6">
+        <h2 class="text-sm font-semibold text-slate-700 mb-3">🚌 EventBridge Buses</h2>
+        <div id="list-eventbuses"></div>
+      </div>
+
+      <!-- EventBridge Rules -->
+      <div id="section-events" class="hidden bg-white rounded-lg shadow p-6">
+        <h2 class="text-sm font-semibold text-slate-700 mb-3">📡 EventBridge Rules</h2>
+        <div id="list-events"></div>
+      </div>
+      <div id="section-params" class="hidden bg-white rounded-lg shadow p-6">
+        <h2 class="text-sm font-semibold text-slate-700 mb-3">🔧 Parametri risolti</h2>
+        <input id="params-filter" type="text" placeholder="Filtra per chiave o valore..."
+          class="mb-3 w-full text-xs border border-slate-300 rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        <div id="params-table"></div>
+      </div>
+
+    </div>
+  </div>
+
+<!-- ============================================================
+     JS — preset UI + rendering risultati
+     ============================================================ -->
+<script>
+let currentRepo = { owner: null, repo: null };
+
+async function fetchAndFill(owner, repo, filePath, textareaId, statusId) {
+  const statusEl = document.getElementById(statusId);
+  if (typeof window.pyFetchFile === 'undefined') {
+    statusEl.textContent = '⚠️ PyScript non pronto — riprova';
+    return false;
+  }
+  statusEl.textContent = '⏳ download...';
+  try {
+    const res = JSON.parse(await window.pyFetchFile.callPromising(owner, repo, filePath));
+    if (res.error) { statusEl.textContent = `✗ ${res.error}`; return false; }
+    document.getElementById(textareaId).value = res.content;
+    statusEl.textContent = `✓ ${res.content.length} chars`;
+    return true;
+  } catch (e) {
+    statusEl.textContent = `✗ ${e.message}`;
+    return false;
+  }
+}
+
+async function loadPreset() {
+  if (!currentRepo.owner) return;
+  await Promise.all([
+    fetchAndFill(currentRepo.owner, currentRepo.repo,
+      'scripts/aws/cfn/storage.yml',      'yaml-storage',      'status-storage'),
+    fetchAndFill(currentRepo.owner, currentRepo.repo,
+      'scripts/aws/cfn/microservice.yml', 'yaml-microservice', 'status-microservice'),
+  ]);
+}
+
+document.querySelectorAll('[data-owner]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentRepo = { owner: btn.dataset.owner, repo: btn.dataset.repo };
+    document.querySelectorAll('[data-owner]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadPreset();
+  });
+});
+
+// ---------- UI helpers ----------
+function appendLog(msg) {
+  const el = document.getElementById('log');
+  el.textContent += msg + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+
+function statCard(label, value, color) {
+  return `<div class="rounded-lg p-4 text-center text-white ${color}">
+    <div class="text-2xl font-bold">${value}</div>
+    <div class="text-xs mt-1 opacity-90">${label}</div>
+  </div>`;
+}
+
+function resourceCard(title, rows, rawObj) {
+  const inner = rows.map(([k, v]) =>
+    `<div class="text-xs text-slate-500 my-0.5"><span class="font-medium text-slate-700">${k}:</span> ${v ?? '—'}</div>`
+  ).join('');
+  const jsonBlock = rawObj
+    ? `<details class="json-block"><summary>JSON completo</summary><pre>${JSON.stringify(rawObj, null, 2)}</pre></details>`
+    : '';
+  return `<div class="result-ok bg-slate-50 p-3 mb-3 rounded text-sm">
+    <div class="font-semibold text-blue-700 mb-1">${title}</div>${inner}${jsonBlock}</div>`;
+}
+
+function renderResults(data) {
+  const show = id => document.getElementById(id).classList.remove('hidden');
+
+  document.getElementById('stats').innerHTML =
+    statCard('ECS Services',   data.stats.ecs,       'bg-blue-600') +
+    statCard('DynamoDB',       data.stats.dynamo,    'bg-purple-600') +
+    statCard('SQS Queues',     data.stats.sqs,       'bg-green-600') +
+    statCard('Lambda',         data.stats.lambda,    'bg-yellow-500') +
+    statCard('Event Buses',    data.stats.eventbuses,'bg-rose-500') +
+    statCard('EB Rules',       data.stats.events,    'bg-orange-500') +
+    statCard('IAM policy map', data.stats.policies,  'bg-slate-500');
+
+  if (data.ecs.length) {
+    document.getElementById('list-ecs').innerHTML = data.ecs.map(s => resourceCard(s.name, [
+      ['Logical ID',   s.logical_id],
+      ['CPU',          s.cpu],
+      ['Memory',       s.memory],
+      ['Image',        s.container_image],
+      ['Health check', s.health_check_path],
+      ['Task policy',  s.task_role_policy],
+      ['Env vars',     s.env_vars_count],
+      ['Reads from',    s.reads_from.join(', ')   || '—'],
+      ['Writes to',     s.writes_to.join(', ')    || '—'],
+      ['Triggers',      s.triggers.join(', ')     || '—'],
+      ['Triggered by',  s.triggered_by.join(', ') || '—'],
+    ], s)).join('');
+    show('section-ecs');
+  }
+
+  if (data.dynamo.length) {
+    document.getElementById('list-dynamo').innerHTML = data.dynamo.map(t => resourceCard(t.name, [
+      ['Logical ID', t.logical_id],
+      ['Hash key',   t.hash_key],
+      ['Range key',  t.range_key],
+      ['GSI',        t.gsi.join(', ') || '—'],
+      ['Stream',     t.stream],
+      ['TTL',        t.ttl],
+      ['ARN param',  t.arn_param],
+    ], t)).join('');
+    show('section-dynamo');
+  }
+
+  if (data.sqs.length) {
+    document.getElementById('list-sqs').innerHTML = data.sqs.map(q => resourceCard(q.name, [
+      ['Logical ID',         q.logical_id],
+      ['Visibility timeout', q.visibility_timeout],
+      ['DLQ',   q.has_dlq   ? '✓' : '✗'],
+      ['Alarm', q.has_alarm ? '✓' : '✗'],
+      ['ARN param', q.arn_param],
+      ['Triggers',  q.triggers.join(', ') || '—'],
+    ], q)).join('');
+    show('section-sqs');
+  }
+
+  if (data.lambda.length) {
+    document.getElementById('list-lambda').innerHTML = data.lambda.map(f => resourceCard(f.name, [
+      ['Logical ID',    f.logical_id],
+      ['Runtime',       f.runtime],
+      ['Handler',       f.handler],
+      ['Memory',        f.memory],
+      ['Timeout',       f.timeout],
+      ['Event sources', f.event_sources.join(', ') || '—'],
+      ['Triggered by',  f.triggered_by.join(', ')  || '—'],
+    ], f)).join('');
+    show('section-lambda');
+  }
+
+  if (data.events && data.events.length) {
+    document.getElementById('list-events').innerHTML = data.events.map(r => resourceCard(r.name, [
+      ['Logical ID',   r.logical_id],
+      ['ARN',          r.arn],
+      ['Event bus',    r.event_bus_name],
+      ['Detail-type',  (r.event_pattern['detail-type'] || []).join(', ') || '—'],
+      ['Target IDs',   r.target_ids.join(', ') || '—'],
+      ['Writes to',    r.writes_to.join(', ')  || '—'],
+    ], r)).join('');
+    show('section-events');
+  }
+
+  if (data.eventbuses && data.eventbuses.length) {
+    document.getElementById('list-eventbuses').innerHTML = data.eventbuses.map(b => resourceCard(b.name, [
+      ['Logical ID', b.logical_id],
+      ['ARN',        b.arn],
+    ], b)).join('');
+    show('section-eventbuses');
+  }
+
+  show('results');
+}
+
+function renderParams(params) {
+  const all = Object.entries(params).sort(([a], [b]) => a.localeCompare(b));
+  const filterEl = document.getElementById('params-filter');
+  const tableEl  = document.getElementById('params-table');
+
+  function build(entries) {
+    if (!entries.length) { tableEl.innerHTML = '<p class="text-xs text-slate-400">Nessun parametro.</p>'; return; }
+    tableEl.innerHTML = `<table class="w-full text-xs border-collapse">
+      <thead><tr class="bg-slate-100">
+        <th class="text-left px-2 py-1 font-semibold text-slate-600 border-b border-slate-200 w-2/5">Chiave</th>
+        <th class="text-left px-2 py-1 font-semibold text-slate-600 border-b border-slate-200">Valore</th>
+      </tr></thead>
+      <tbody>${entries.map(([k, v], i) => `
+        <tr class="${i % 2 === 0 ? '' : 'bg-slate-50'}">
+          <td class="px-2 py-1 font-mono text-blue-700 align-top break-all">${k}</td>
+          <td class="px-2 py-1 text-slate-700 align-top break-all">${v}</td>
+        </tr>`).join('')}
+      </tbody></table>`;
+  }
+
+  build(all);
+  filterEl.oninput = () => {
+    const q = filterEl.value.toLowerCase();
+    build(all.filter(([k, v]) => k.toLowerCase().includes(q) || String(v).toLowerCase().includes(q)));
+  };
+  document.getElementById('section-params').classList.remove('hidden');
+}
+
+// ---------- Run button ----------
+document.getElementById('run-btn').addEventListener('click', async () => {
+  document.getElementById('log').textContent = '';
+  document.getElementById('results').classList.add('hidden');
+  ['section-ecs','section-dynamo','section-sqs','section-lambda','section-eventbuses','section-events'].forEach(id =>
+    document.getElementById(id).classList.add('hidden'));
+
+  const storageYaml = document.getElementById('yaml-storage').value.trim();
+  const microYaml   = document.getElementById('yaml-microservice').value.trim();
+
+  if (!storageYaml && !microYaml) { appendLog('⚠️  Nessun template inserito.'); return; }
+
+  const paramsRaw = document.getElementById('params-input').value.trim();
+  const params = {};
+  paramsRaw.split('\n').forEach(line => {
+    const idx = line.indexOf('=');
+    if (idx > 0) params[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+  });
+
+  appendLog('⏳ Avvio pipeline (PyScript)...');
+  if (typeof window.parsePipeline === 'undefined') {
+    appendLog('⚠️  PyScript non ancora pronto — attendi il caricamento e riprova.');
+    return;
+  }
+
+  try {
+    const owner = currentRepo.owner || '';
+    const repo  = currentRepo.repo  || '';
+    const resultJson = await window.parsePipeline.callPromising(
+      owner, repo, storageYaml, microYaml, JSON.stringify(params));
+    const data = JSON.parse(resultJson);
+    if (data.error) { appendLog(data.log || ''); appendLog('✗ ' + data.error); return; }
+    appendLog(data.log || '');
+    appendLog(`\n✅ Completato — ECS:${data.stats.ecs}  DynamoDB:${data.stats.dynamo}  SQS:${data.stats.sqs}  Lambda:${data.stats.lambda}`);
+    renderResults(data);
+    renderParams(data.parameters || {});
+  } catch (e) {
+    appendLog('✗ Errore JS: ' + e);
+  }
+});
+</script>
+
+<!-- ============================================================
+     PyScript — solo il bridge verso CloudFormationParser
+     ============================================================ -->
+<script type="py" config='{"packages":["pyyaml","pyodide-http"],"fetch":[{"files":["./models.py","./cfn_parser.py","./github_fetcher.py","./default_params.json"]}]}'>
+import pyodide_http
+pyodide_http.patch_all()
+
+import sys, io, json
+from pyscript import window
+from cfn_parser import CloudFormationParser
+from github_fetcher import GitHubFetcher
+
+# ---------- fetch file via GitHubFetcher ----------
+async def py_fetch_file(owner, repo, file_path):
+    for branch in ('main', 'develop', 'master'):
+        content = await GitHubFetcher.fetch_file(owner, repo, file_path, branch)
+        if content is not None:
+            return json.dumps({"content": content})
+    return json.dumps({"error": f"File non trovato: {file_path} (provati main/develop/master)"})
+
+window.pyFetchFile = py_fetch_file
+
+# ---------- pipeline completa ----------
+async def parse_pipeline(owner, repo, storage_yaml, microservice_yaml, extra_params_json):
+    # 1. default_params.json — strato base (priorità minima)
+    try:
+        with open('default_params.json') as f:
+            base_params = {k: v for k, v in json.load(f).items() if not k.startswith('_')}
+    except Exception:
+        base_params = {}
+
+    # 2. parametri manuali dalla UI (priorità massima, applicati dopo)
+    manual_params = json.loads(extra_params_json) if extra_params_json else {}
+
+    buf = io.StringIO()
+    sys.stdout = buf
+    try:
+        parser = CloudFormationParser()
+
+        # strato 1: default_params.json
+        parser.load_params(base_params)
+
+        # strato 2: parametri scaricati da GitHub
+        if owner and repo:
+            print("⚙️ Caricamento parametri da GitHub...")
+            await parser.load_params_github(owner, repo)
+
+        # strato 3: override manuali (priorità massima)
+        if manual_params:
+            parser.parameter_values.update({k: str(v) for k, v in manual_params.items()})
+
+        # strato 4: storage.yml → gli Output diventano parametri per il template successivo
+        if storage_yaml and storage_yaml.strip():
+            print(f"\n🗄️ Processing storage.yml ({len(storage_yaml)} chars)...")
+            if not parser.process_template(storage_yaml):
+                return json.dumps({"error": "Parsing storage.yml fallito", "log": buf.getvalue()})
+        else:
+            print("ℹ️  storage.yml vuoto — saltato")
+
+        # strato 5: microservice.yml → usa il calderone di parametri accumulato
+        if microservice_yaml and microservice_yaml.strip():
+            print(f"\n🚀 Processing microservice.yml ({len(microservice_yaml)} chars)...")
+            if not parser.process_template(microservice_yaml):
+                return json.dumps({"error": "Parsing microservice.yml fallito", "log": buf.getvalue()})
+        else:
+            print("ℹ️  microservice.yml vuoto — saltato")
+
+        parser.reconcile_connections()
+
+        g = parser.graph
+
+        def conn_arns(resource, key):
+            return resource.connections.get(key, [])
+
+        return json.dumps({
+            "log": buf.getvalue(),
+            "stats": {
+                "ecs":        len(g.ecs_services),
+                "dynamo":     len(g.dynamodb_tables),
+                "sqs":        len(g.sqs_queues),
+                "lambda":     len(g.lambda_functions),
+                "eventbuses": len(g.eventbuses),
+                "events":     len(g.eventbus_rules),
+                "policies":   len(parser.policy_to_owner),
+            },
+            "ecs": [{
+                "logical_id":        s.logical_id,
+                "name":              s.name,
+                "arn":               s.arn,
+                "resource_type":     s.resource_type,
+                "cpu":               s.cpu,
+                "memory":            s.memory,
+                "container_image":   s.container_image,
+                "health_check_path": s.health_check_path,
+                "task_role_policy":  s.task_role_policy,
+                "environment_vars":  s.environment_vars,
+                "env_vars_count":    len(s.environment_vars),
+                "reads_from":        conn_arns(s, "reads_from"),
+                "writes_to":         conn_arns(s, "writes_to"),
+                "triggers":          conn_arns(s, "triggers"),
+                "triggered_by":      conn_arns(s, "triggered_by"),
+            } for s in g.ecs_services.values()],
+            "dynamo": [{
+                "logical_id":  t.logical_id,
+                "name":        t.name,
+                "arn":         t.arn,
+                "resource_type": t.resource_type,
+                "hash_key":    t.hash_key,
+                "range_key":   t.range_key,
+                "gsi":         t.gsi,
+                "stream":      t.stream,
+                "ttl":         t.ttl,
+                "reads_from":  conn_arns(t, "reads_from"),
+                "writes_to":   conn_arns(t, "writes_to"),
+                "triggers":    conn_arns(t, "triggers"),
+                "triggered_by": conn_arns(t, "triggered_by"),
+            } for t in g.dynamodb_tables.values()],
+            "sqs": [{
+                "logical_id":         q.logical_id,
+                "name":               q.name,
+                "arn":                q.arn,
+                "resource_type":      q.resource_type,
+                "visibility_timeout": q.visibility_timeout,
+                "has_dlq":            q.has_dlq,
+                "has_alarm":          q.has_alarm,
+                "reads_from":         conn_arns(q, "reads_from"),
+                "writes_to":          conn_arns(q, "writes_to"),
+                "triggers":           conn_arns(q, "triggers"),
+                "triggered_by":       conn_arns(q, "triggered_by"),
+            } for q in g.sqs_queues.values()],
+            "lambda": [{
+                "logical_id":    f.logical_id,
+                "name":          f.name,
+                "arn":           f.arn,
+                "resource_type": f.resource_type,
+                "runtime":       f.runtime,
+                "handler":       f.handler,
+                "memory":        f.memory,
+                "timeout":       f.timeout,
+                "role_logical_id": f.role_logical_id,
+                "event_sources": f.event_sources,
+                "reads_from":    conn_arns(f, "reads_from"),
+                "writes_to":     conn_arns(f, "writes_to"),
+                "triggers":      conn_arns(f, "triggers"),
+                "triggered_by":  conn_arns(f, "triggered_by"),
+            } for f in g.lambda_functions.values()],
+            "events": [{
+                "logical_id":      r.logical_id,
+                "name":            r.name,
+                "arn":             r.arn,
+                "resource_type":   r.resource_type,
+                "event_bus_name":  r.event_bus_name,
+                "event_pattern":   r.event_pattern,
+                "target_ids":      r.target_ids,
+                "target_arns":     r.target_arns,
+                "writes_to":       conn_arns(r, "writes_to"),
+                "triggered_by":    conn_arns(r, "triggered_by"),
+            } for r in g.eventbus_rules.values()],
+            "eventbuses": [{
+                "logical_id":    b.logical_id,
+                "name":          b.name,
+                "arn":           b.arn,
+                "resource_type": b.resource_type,
+            } for b in g.eventbuses.values()],
+            "parameters": dict(sorted(parser.parameter_values.items())),
+        })
+    except Exception as e:
+        import traceback
+        return json.dumps({"error": str(e), "log": buf.getvalue() + '\n' + traceback.format_exc()})
+    finally:
+        sys.stdout = sys.__stdout__
+
+window.parsePipeline = parse_pipeline
+</script>
+
+</body>
+</html>
