@@ -210,7 +210,7 @@ document.getElementById('run-btn').addEventListener('click', async () => {
 });
 </script>
 
-<script type="py" config='{"packages":["pyodide-http"],"fetch":[{"files":["./models.py","./pom_parser.py","./github_fetcher.py"]}]}'>
+<script type="py" config="./pyscript.toml">
 import pyodide_http
 pyodide_http.patch_all()
 

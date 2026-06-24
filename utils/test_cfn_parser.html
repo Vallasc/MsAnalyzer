@@ -369,7 +369,7 @@ document.getElementById('run-btn').addEventListener('click', async () => {
 <!-- ============================================================
      PyScript — solo il bridge verso CloudFormationParser
      ============================================================ -->
-<script type="py" config='{"packages":["pyyaml","pyodide-http"],"fetch":[{"files":["./models.py","./cfn_parser.py","./github_fetcher.py","./default_params.json"]}]}'>
+<script type="py" config="./pyscript.toml">
 import pyodide_http
 pyodide_http.patch_all()
 

@@ -1,0 +1,9 @@
+packages = ["pyodide-http", "pyyaml"]
+
+[files]
+"../analyzer/models.py" = ""
+"../analyzer/github_fetcher.py" = ""
+"../analyzer/cfn_parser.py" = ""
+"../analyzer/pom_parser.py" = ""
+"../analyzer/multi_repo_analyzer.py" = ""
+"./default_params.json" = ""
