@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SEND PomParser</title>
+  <link rel="stylesheet" href="https://pyscript.net/releases/2025.11.2/core.css" />
+  <script type="module" src="https://pyscript.net/releases/2025.11.2/core.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .btn-primary  { background-color: #0066CC; color: white; }
+    .btn-primary:hover  { background-color: #0052a3; }
+    .btn-preset   { background-color: #f1f5f9; color: #1e293b; border: 1px solid #cbd5e1; }
+    .btn-preset:hover   { background-color: #e2e8f0; }
+    .btn-preset.active  { background-color: #0066CC; color: white; border-color: #0066CC; }
+    .result-ok  { border-left: 4px solid #059669; }
+    .result-err { border-left: 4px solid #dc2626; }
+    details.json-block summary { cursor: pointer; color: #64748b; font-size: 0.7rem; margin-top: 6px; }
+    details.json-block pre { background:#0f172a; color:#86efac; font-size:0.68rem; padding:8px; border-radius:4px; overflow:auto; max-height:260px; margin-top:4px; }
+  </style>
+</head>
+<body class="bg-slate-100 min-h-screen p-8 font-sans">
+
+  <div class="max-w-4xl mx-auto">
+    <header class="mb-8">
+      <h1 class="text-2xl font-bold text-slate-800"><code class="text-blue-600">SEND PomParser</code></h1>
+      <p class="text-slate-500 text-sm mt-1">Carica un pom.xml da un repo predefinito oppure incollalo manualmente.</p>
+    </header>
+
+    <div class="bg-white rounded-lg shadow p-6 mb-6">
+      <div class="mb-4">
+        <p class="text-sm font-semibold text-slate-700 mb-2">Repo predefiniti</p>
+        <div class="flex flex-wrap gap-2">
+          <button class="btn-preset px-3 py-1.5 rounded text-sm font-medium transition-colors"
+            data-owner="pagopa" data-repo="pn-delivery-push-workflow">pagopa/pn-delivery-push-workflow</button>
+          <button class="btn-preset px-3 py-1.5 rounded text-sm font-medium transition-colors"
+            data-owner="pagopa" data-repo="pn-paper-channel">pagopa/pn-paper-channel</button>
+          <button class="btn-preset px-3 py-1.5 rounded text-sm font-medium transition-colors"
+            data-owner="pagopa" data-repo="pn-paper-tracker">pagopa/pn-paper-tracker</button>
+          <button class="btn-preset px-3 py-1.5 rounded text-sm font-medium transition-colors"
+            data-owner="pagopa" data-repo="pn-delivery">pagopa/pn-delivery</button>
+        </div>
+      </div>
+
+      <div class="border-t border-slate-100 pt-4">
+        <div class="mb-3">
+          <label for="pom-path" class="text-sm font-semibold text-slate-700">Path pom.xml nel repo</label>
+          <input id="pom-path" type="text" value="pom.xml"
+            class="mt-1 w-full font-mono text-xs border border-slate-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="pom.xml oppure apps/service/pom.xml" />
+        </div>
+
+        <div class="flex items-center justify-between mb-1">
+          <label class="text-sm font-semibold text-slate-700">pom.xml</label>
+          <span id="status-pom" class="text-xs text-slate-400"></span>
+        </div>
+        <textarea id="pom-input" rows="18"
+          class="w-full font-mono text-xs border border-slate-300 rounded p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+          placeholder="Incolla pom.xml oppure seleziona un repo..."></textarea>
+      </div>
+
+      <button id="run-btn"
+        class="btn-primary mt-4 px-5 py-2 rounded font-semibold text-sm transition-colors">
+        ▶ Esegui parsing POM
+      </button>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-6 mb-6">
+      <h2 class="text-sm font-semibold text-slate-700 mb-2">Log</h2>
+      <pre id="log" class="bg-slate-900 text-green-400 text-xs rounded p-4 min-h-16 overflow-auto whitespace-pre-wrap"></pre>
+    </div>
+
+    <div id="results" class="hidden space-y-6">
+      <div class="bg-white rounded-lg shadow p-6">
+        <h2 class="text-sm font-semibold text-slate-700 mb-4">Dipendenze trovate</h2>
+        <div id="stats" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
+      </div>
+
+      <div id="section-deps" class="hidden bg-white rounded-lg shadow p-6">
+        <h2 class="text-sm font-semibold text-slate-700 mb-3">🌐 External Microservices</h2>
+        <div id="list-deps"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+let currentRepo = { owner: null, repo: null };
+
+function appendLog(msg) {
+  const el = document.getElementById('log');
+  el.textContent += msg + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+
+function statCard(label, value, color) {
+  return `<div class="rounded-lg p-4 text-center text-white ${color}">
+    <div class="text-2xl font-bold">${value}</div>
+    <div class="text-xs mt-1 opacity-90">${label}</div>
+  </div>`;
+}
+
+function depCard(dep) {
+  const rows = [
+    ['Logical ID', dep.logical_id],
+    ['Spec', dep.spec],
+    ['URL', dep.url],
+    ['Commit/Ref', dep.commit],
+    ['Spec path', dep.spec_path],
+    ['ARN', dep.arn],
+  ];
+
+  const inner = rows.map(([k, v]) =>
+    `<div class="text-xs text-slate-500 my-0.5"><span class="font-medium text-slate-700">${k}:</span> ${v || '—'}</div>`
+  ).join('');
+
+  return `<div class="result-ok bg-slate-50 p-3 mb-3 rounded text-sm">
+    <div class="font-semibold text-blue-700 mb-1">${dep.name}</div>${inner}
+    <details class="json-block"><summary>JSON completo</summary><pre>${JSON.stringify(dep, null, 2)}</pre></details>
+  </div>`;
+}
+
+async function fetchPomFromRepo(owner, repo, filePath) {
+  const statusEl = document.getElementById('status-pom');
+  if (typeof window.pyFetchFile === 'undefined') {
+    statusEl.textContent = '⚠️ PyScript non pronto — riprova';
+    return false;
+  }
+
+  statusEl.textContent = '⏳ download...';
+  try {
+    const res = JSON.parse(await window.pyFetchFile.callPromising(owner, repo, filePath));
+    if (res.error) {
+      statusEl.textContent = `✗ ${res.error}`;
+      return false;
+    }
+    document.getElementById('pom-input').value = res.content;
+    statusEl.textContent = `✓ ${res.content.length} chars`;
+    return true;
+  } catch (e) {
+    statusEl.textContent = `✗ ${e.message}`;
+    return false;
+  }
+}
+
+async function loadPreset() {
+  if (!currentRepo.owner) return;
+  const path = document.getElementById('pom-path').value.trim() || 'pom.xml';
+  await fetchPomFromRepo(currentRepo.owner, currentRepo.repo, path);
+}
+
+document.querySelectorAll('[data-owner]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentRepo = { owner: btn.dataset.owner, repo: btn.dataset.repo };
+    document.querySelectorAll('[data-owner]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadPreset();
+  });
+});
+
+function renderResults(data) {
+  const show = id => document.getElementById(id).classList.remove('hidden');
+
+  document.getElementById('stats').innerHTML =
+    statCard('Totali', data.stats.total, 'bg-blue-600') +
+    statCard('Da GitHub', data.stats.github, 'bg-green-600') +
+    statCard('URL dirette', data.stats.http, 'bg-orange-500') +
+    statCard('Senza URL', data.stats.no_url, 'bg-slate-500');
+
+  if (data.dependencies.length) {
+    document.getElementById('list-deps').innerHTML = data.dependencies.map(depCard).join('');
+    show('section-deps');
+  }
+
+  show('results');
+}
+
+document.getElementById('run-btn').addEventListener('click', async () => {
+  document.getElementById('log').textContent = '';
+  document.getElementById('results').classList.add('hidden');
+  document.getElementById('section-deps').classList.add('hidden');
+
+  const pomContent = document.getElementById('pom-input').value.trim();
+  if (!pomContent) {
+    appendLog('⚠️ Nessun pom.xml inserito.');
+    return;
+  }
+
+  appendLog('⏳ Avvio parsing POM (PyScript)...');
+  if (typeof window.parsePom === 'undefined') {
+    appendLog('⚠️ PyScript non ancora pronto — attendi il caricamento e riprova.');
+    return;
+  }
+
+  try {
+    const resultJson = await window.parsePom.callPromising(pomContent);
+    const data = JSON.parse(resultJson);
+
+    if (data.error) {
+      appendLog(data.log || '');
+      appendLog('✗ ' + data.error);
+      return;
+    }
+
+    appendLog(data.log || '');
+    appendLog(`\n✅ Completato — dipendenze: ${data.stats.total}`);
+    renderResults(data);
+  } catch (e) {
+    appendLog('✗ Errore JS: ' + e);
+  }
+});
+</script>
+
+<script type="py" config='{"packages":["pyodide-http"],"fetch":[{"files":["./models.py","./pom_parser.py","./github_fetcher.py"]}]}'>
+import pyodide_http
+pyodide_http.patch_all()
+
+import sys, io, json
+from pyscript import window
+from pom_parser import PomParser
+from github_fetcher import GitHubFetcher
+
+
+async def py_fetch_file(owner, repo, file_path):
+    for branch in ('main', 'develop', 'master'):
+        content = await GitHubFetcher.fetch_file(owner, repo, file_path, branch)
+        if content is not None:
+            return json.dumps({"content": content})
+    return json.dumps({"error": f"File non trovato: {file_path} (provati main/develop/master)"})
+
+
+window.pyFetchFile = py_fetch_file
+
+
+async def parse_pom(pom_content):
+    buf = io.StringIO()
+    sys.stdout = buf
+
+    try:
+        parser = PomParser()
+        dependencies = parser.extract_dependencies(pom_content)
+
+        print(f"📦 Dipendenze esterne trovate: {len(dependencies)}")
+
+        deps_data = [{
+            "logical_id": dep.logical_id,
+            "name": dep.name,
+            "arn": dep.arn,
+            "resource_type": dep.resource_type,
+            "spec": dep.spec,
+            "url": dep.url,
+            "spec_path": dep.spec_path,
+            "commit": dep.commit,
+        } for dep in dependencies]
+
+        github_count = sum(1 for d in deps_data if d["url"] and 'github.com' in d["url"])
+        http_count = sum(1 for d in deps_data if d["spec"].startswith('http') and not (d["url"] and 'github.com' in d["url"]))
+
+        return json.dumps({
+            "log": buf.getvalue(),
+            "stats": {
+                "total": len(deps_data),
+                "github": github_count,
+                "http": http_count,
+                "no_url": len(deps_data) - github_count - http_count,
+            },
+            "dependencies": deps_data,
+        })
+    except Exception as e:
+        import traceback
+        return json.dumps({"error": str(e), "log": buf.getvalue() + '\n' + traceback.format_exc()})
+    finally:
+        sys.stdout = sys.__stdout__
+
+
+window.parsePom = parse_pom
+</script>
+
+</body>
+</html>

@@ -68,13 +68,14 @@ class CloudFormationParser:
         return template
 
     def reconcile_connections(self):
-        """Ricostruisce triggers e triggered_by su tutte le risorse dopo aver
-        processato tutti i template. Unica passata finale da chiamare una volta sola.
+        """Costruisce le connessioni bidirezionali dopo aver processato tutti i template.
 
-        Gestisce:
-        - SQS → Lambda (EventSourceMapping)
-        - EventBridge rule → target (triggered_by)
-        - EventBus publisher → rule matching (via Condition detail-type)
+        Relazioni prodotte:
+          SQS --triggers--> Lambda           (EventSourceMapping)
+          EventBridgeRule --triggers--> Lambda/SQS  (target della regola)
+          ECS/Lambda --triggers--> EventBridgeRule  (match detail-type sull'EventBus)
+
+        Chiamare una sola volta, dopo tutti i process_template().
         """
         print("\n\U0001f517 Riconciliazione connessioni...")
 
@@ -580,9 +581,9 @@ class CloudFormationParser:
                 target_arn = str(target_arn)
                 rule.target_ids.append(str(target_id))
                 rule.target_arns.append(target_arn)
-                rule.add_connection('writes_to', target_arn)
+                rule.add_connection('triggers', target_arn)
 
-                # Connessione inversa: se il target è già nel graph, aggiunge triggered_by
+                # Se il target è già nel graph, aggiunge triggered_by sull'altro lato
                 found = self.graph.resolve(target_arn) or self._find_resource_by_ref(
                     self.extract_ref_name(target.get('Arn', ''))
                 )
@@ -658,18 +659,17 @@ class CloudFormationParser:
                     continue
 
                 if isinstance(target, DynamoDBTable):
-                    if ddb_read or ddb_write:
+                    if ddb_read:
                         owner.add_connection('reads_from', target.arn)
-                        target.add_connection('triggered_by', owner.arn)
                     if ddb_write:
+                        owner.add_connection('reads_from', target.arn)
                         owner.add_connection('writes_to', target.arn)
                     print(f"      → {owner.name} accede a DynamoDB: {target.name}")
 
                 elif isinstance(target, SQSQueue):
                     if sqs_recv:
                         owner.add_connection('reads_from', target.arn)
-                        target.add_connection('triggers', owner.arn)
-                        print(f"      → {owner.name} riceve da SQS: {target.name}")
+                        print(f"      → {owner.name} legge da SQS: {target.name}")
                     if sqs_send:
                         owner.add_connection('writes_to', target.arn)
                         print(f"      → {owner.name} invia a SQS: {target.name}")

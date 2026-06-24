@@ -10,10 +10,25 @@ class AWSResource:
         self.resource_type = resource_type
         self.arn = None               # ARN della risorsa (se disponibile)
         self.connections = {
-            'reads_from': [],    # ARN delle risorse da cui legge
-            'writes_to': [],     # ARN delle risorse in cui scrive
-            'triggers': [],      # ARN delle risorse che triggera
-            'triggered_by': []   # ARN delle risorse che lo triggerano
+            # Chi legge dati da questa risorsa:
+            #   ECS/Lambda --reads--> DynamoDB  (IAM: Get/Query/Scan)
+            #   ECS/Lambda --reads--> SQS        (IAM: ReceiveMessage)
+            'reads_from': [],
+            # Chi scrive dati su questa risorsa:
+            #   ECS/Lambda --writes--> DynamoDB  (IAM: Put/Update/Delete)
+            #   ECS/Lambda --writes--> SQS        (IAM: SendMessage)
+            #   ECS/Lambda --writes--> EventBus   (IAM: PutEvents)
+            'writes_to': [],
+            # Chi attiva/dispara questa risorsa:
+            #   SQS          --triggers--> Lambda         (EventSourceMapping)
+            #   EventBridgeRule --triggers--> Lambda/SQS  (target della regola)
+            #   ECS/Lambda   --triggers--> EventBridgeRule (match detail-type)
+            'triggers': [],
+            # Inverso di triggers — chi attiva ME (usato per visibilità bidirezionale)
+            'triggered_by': [],
+            # Chi chiamo via REST:
+            #   ECS/Lambda --calls--> ECS/ExternalMicroservice  (da pom_parser)
+            'calls': [],
         }
         # bus_arn → set di detail-type pubblicati (usato per riconciliazione finale)
         self.publishes_events: dict = {}

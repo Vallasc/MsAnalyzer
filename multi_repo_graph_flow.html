@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SEND Multi Repo Graph - Flow View</title>
+  <link rel="stylesheet" href="https://pyscript.net/releases/2025.11.2/core.css" />
+  <script type="module" src="https://pyscript.net/releases/2025.11.2/core.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/d3@7/dist/d3.min.js"></script>
+  <script src="https://unpkg.com/elkjs@0.9.3/lib/elk.bundled.js"></script>
+  <style>
+    .btn-primary { background-color: #0066CC; color: white; }
+    .btn-primary:hover { background-color: #0052a3; }
+    .btn-preset { background-color: #f1f5f9; color: #1e293b; border: 1px solid #cbd5e1; }
+    .btn-preset:hover { background-color: #e2e8f0; }
+    .chip { background: #e2e8f0; color: #1e293b; border-radius: 9999px; padding: 2px 10px; font-size: 11px; }
+    #diagram { width:100%; display:block; border-radius:10px; border:1px solid #e2e8f0; background:#f8fafc; cursor:grab; }
+    #diagram:active { cursor:grabbing; }
+  </style>
+</head>
+<body class="bg-slate-100 min-h-screen p-8 font-sans">
+  <div class="max-w-7xl mx-auto">
+    <header class="mb-6">
+      <h1 class="text-2xl font-bold text-slate-800"><span class="text-blue-600">SEND</span> Multi Repo Graph - Flow View</h1>
+      <p class="text-slate-500 text-sm mt-1">Vista alternativa più ordinata: layout gerarchico a livelli con gruppi per tipo risorsa.</p>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+      <div class="bg-white rounded-lg shadow p-5 lg:col-span-1">
+        <h2 class="text-sm font-semibold text-slate-700 mb-3">Microservizi</h2>
+        <div id="preset-list" class="space-y-2 text-sm"></div>
+
+        <div class="border-t border-slate-100 mt-4 pt-4">
+          <label class="text-sm font-semibold text-slate-700">Aggiungi owner/repo</label>
+          <div class="flex gap-2 mt-2">
+            <input id="custom-repo" type="text" placeholder="pagopa/pn-delivery"
+              class="flex-1 font-mono text-xs border border-slate-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <button id="add-custom" class="btn-preset px-3 rounded text-sm">Aggiungi</button>
+          </div>
+        </div>
+
+        <div class="border-t border-slate-100 mt-4 pt-4">
+          <p class="text-sm font-semibold text-slate-700 mb-2">Selezionati</p>
+          <div id="selected-chips" class="flex flex-wrap gap-2"></div>
+        </div>
+
+        <div class="border-t border-slate-100 mt-4 pt-4">
+          <p class="text-xs font-semibold text-slate-700 mb-2">Filtra connessioni</p>
+          <div class="grid grid-cols-2 gap-1 text-xs text-slate-600">
+            <label><input class="flow-filter" type="checkbox" name="relation-type" value="reads" checked /> reads</label>
+            <label><input class="flow-filter" type="checkbox" name="relation-type" value="writes" checked /> writes</label>
+            <label><input class="flow-filter" type="checkbox" name="relation-type" value="triggers" checked /> triggers</label>
+            <label><input class="flow-filter" type="checkbox" name="relation-type" value="triggered_by" /> triggered_by</label>
+            <label><input class="flow-filter" type="checkbox" name="relation-type" value="calls" checked /> calls</label>
+          </div>
+          <div class="mt-3 space-y-1 text-xs text-slate-600">
+            <label class="block"><input id="show-edge-labels" class="flow-filter" type="checkbox" checked /> Mostra etichette archi</label>
+            <label class="block"><input id="focus-neighborhood" class="flow-filter" type="checkbox" checked /> Focus su vicinato al click</label>
+            <label class="block"><input id="forward-only" class="flow-filter" type="checkbox" checked /> Nascondi duplicati inversi</label>
+          </div>
+        </div>
+
+        <div class="border-t border-slate-100 mt-4 pt-4">
+          <p class="text-xs font-semibold text-slate-700 mb-2">Filtra tipi di nodo</p>
+          <div class="grid grid-cols-2 gap-1 text-xs text-slate-600">
+            <label class="flex items-center gap-1.5"><input class="node-filter" type="checkbox" value="ecs" checked /><span class="inline-block w-2.5 h-2.5 rounded-sm shrink-0" style="background:#ea580c"></span>ECS</label>
+            <label class="flex items-center gap-1.5"><input class="node-filter" type="checkbox" value="lambda" checked /><span class="inline-block w-2.5 h-2.5 rounded-sm shrink-0" style="background:#f59e0b"></span>Lambda</label>
+            <label class="flex items-center gap-1.5"><input class="node-filter" type="checkbox" value="sqs" checked /><span class="inline-block w-2.5 h-2.5 rounded-sm shrink-0" style="background:#db2777"></span>SQS</label>
+            <label class="flex items-center gap-1.5"><input class="node-filter" type="checkbox" value="dynamodb" checked /><span class="inline-block w-2.5 h-2.5 rounded-sm shrink-0" style="background:#2563eb"></span>DynamoDB</label>
+            <label class="flex items-center gap-1.5"><input class="node-filter" type="checkbox" value="eventbus" checked /><span class="inline-block w-2.5 h-2.5 rounded-sm shrink-0" style="background:#ec4899"></span>EventBus</label>
+            <label class="flex items-center gap-1.5"><input class="node-filter" type="checkbox" value="eventrule" checked /><span class="inline-block w-2.5 h-2.5 rounded-sm shrink-0" style="background:#a855f7"></span>EventRule</label>
+            <label class="flex items-center gap-1.5"><input class="node-filter" type="checkbox" value="external" checked /><span class="inline-block w-2.5 h-2.5 rounded-sm shrink-0" style="background:#dc2626"></span>External</label>
+            <label class="flex items-center gap-1.5"><input class="node-filter" type="checkbox" value="resource" checked /><span class="inline-block w-2.5 h-2.5 rounded-sm shrink-0" style="background:#334155"></span>Altro</label>
+          </div>
+        </div>
+
+        <div class="border-t border-slate-100 mt-4 pt-4">
+          <p class="text-xs font-semibold text-slate-700 mb-2">Algoritmo di layout</p>
+          <select id="layout-algo" class="w-full text-xs border border-slate-300 rounded p-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="layered-lr-ns" selected>&#8594; Layered RIGHT · NETWORK_SIMPLEX</option>
+            <option value="layered-tb-ns">&#8595; Layered DOWN · NETWORK_SIMPLEX</option>
+            <option value="layered-lr-ls">&#8594; Layered RIGHT · LAYER_SWEEP</option>
+            <option value="layered-lr-lp">&#8594; Layered RIGHT · LINEAR_SEGMENTS</option>
+            <option value="stress">&#9675; Stress (organico, no livelli)</option>
+            <option value="stress-repo">&#9632; Stress per repo (cluster)</option>
+          </select>
+        </div>
+
+        <button id="run-btn" class="btn-primary mt-5 px-5 py-2 rounded font-semibold text-sm transition-colors w-full">▶ Crea flow map</button>
+        <button id="reset-focus" class="btn-preset mt-2 px-5 py-2 rounded font-semibold text-sm transition-colors w-full">Reset focus</button>
+      </div>
+
+      <div class="bg-white rounded-lg shadow p-5 lg:col-span-2">
+        <h2 class="text-sm font-semibold text-slate-700 mb-3">Statistiche</h2>
+        <div id="stats" class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4"></div>
+
+        <h2 class="text-sm font-semibold text-slate-700 mb-2">Nodo selezionato</h2>
+        <div id="details" class="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded p-3 min-h-20 mb-4">Seleziona un nodo per vedere dettagli.</div>
+
+        <h2 class="text-sm font-semibold text-slate-700 mb-2">Log</h2>
+        <pre id="log" class="bg-slate-900 text-green-400 text-xs rounded p-3 h-40 overflow-auto whitespace-pre-wrap"></pre>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-5">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-semibold text-slate-700">Flow Map interattiva</h2>
+        <div class="text-xs text-slate-500">Zoom, pan, click su nodo</div>
+      </div>
+      <svg id="diagram" style="min-height:700px"></svg>
+    </div>
+  </div>
+
+<script>
+// ── Config ──────────────────────────────────────────────────────────────────
+const CFG = { nodeW:220, nodeH:52, nodeRx:7, colPadX:55, topPad:100, botPad:60 };
+const elk = new ELK();
+// Node type sort order within a column
+const TYPE_ORDER = { ecs:0, lambda:1, sqs:2, dynamodb:3, eventbus:4, eventrule:5, resource:6, external:7 };
+// Repo accent colors (one per analyzed repo, cycles if needed)
+const REPO_COLORS = ['#0369a1','#065f46','#7c2d12','#5b21b6','#881337','#0f766e','#92400e','#1e40af'];
+const EXT_REPO_COLOR = '#78350f';
+const NODE_CFG = {
+  ecs:      { bg:'#ea580c', text:'#fff', badge:'ECS' },
+  lambda:   { bg:'#f59e0b', text:'#fff', badge:'λ'   },
+  sqs:      { bg:'#db2777', text:'#fff', badge:'SQS' },
+  dynamodb: { bg:'#2563eb', text:'#fff', badge:'DB'  },
+  eventbus: { bg:'#ec4899', text:'#fff', badge:'EB'  },
+  eventrule:{ bg:'#a855f7', text:'#fff', badge:'R'   },
+  external: { bg:'#dc2626', text:'#fff', badge:'EXT' },
+  resource: { bg:'#334155', text:'#fff', badge:'?'   },
+};
+const EDGE_CFG = {
+  reads:       { stroke:'#7c3aed', dash:'',    label:'reads',       w:1.5 },
+  writes:      { stroke:'#047857', dash:'',    label:'writes',      w:1.5 },
+  reads_writes:{ stroke:'#0369a1', dash:'',    label:'reads/writes', w:2.2 },
+  triggers:    { stroke:'#b45309', dash:'',    label:'triggers',    w:1.5 },
+  calls:       { stroke:'#b91c1c', dash:'',    label:'calls',       w:2.2 },
+  triggered_by:{ stroke:'#b45309', dash:'5,3', label:'←trigger',  w:1.2 },
+};
+const INVERSE_OF = { triggered_by:'triggers' };
+const mkId = r => `arr-${r}`;
+
+// ── State ────────────────────────────────────────────────────────────────────
+const presets = [
+  { owner:'pagopa', repo:'pn-delivery-push-workflow' },
+  { owner:'pagopa', repo:'pn-paper-channel' },
+  { owner:'pagopa', repo:'pn-paper-tracker' },
+  { owner:'pagopa', repo:'pn-delivery' },
+];
+
+let selected = new Map();
+let currentPayload = null;
+let svgZoom = null;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function safe(id) { return id.replace(/[^a-z0-9]/gi, '_'); }
+function checkedRelations() {
+  return new Set([...document.querySelectorAll('input[name="relation-type"]:checked')].map(x => x.value));
+}
+function checkedNodeTypes() {
+  return new Set([...document.querySelectorAll('input.node-filter:checked')].map(x => x.value));
+}
+function appendLog(msg) {
+  const el = document.getElementById('log');
+  el.textContent += msg + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+
+function renderPresets() {
+  document.getElementById('preset-list').innerHTML = presets.map((p, i) => {
+    const key = `${p.owner}/${p.repo}`;
+    return `<label class="flex items-center gap-2 cursor-pointer select-none">
+      <input type="checkbox" data-key="${key}" data-owner="${p.owner}" data-repo="${p.repo}" class="repo-check" ${i < 3 ? 'checked' : ''} />
+      <span class="font-mono text-xs text-slate-700">${key}</span>
+    </label>`;
+  }).join('');
+  document.querySelectorAll('.repo-check').forEach(el => {
+    if (el.checked) selected.set(el.dataset.key, { owner: el.dataset.owner, repo: el.dataset.repo });
+    el.addEventListener('change', () => {
+      if (el.checked) selected.set(el.dataset.key, { owner: el.dataset.owner, repo: el.dataset.repo });
+      else selected.delete(el.dataset.key);
+      renderSelected();
+    });
+  });
+  renderSelected();
+}
+
+function renderSelected() {
+  const items = [...selected.keys()];
+  document.getElementById('selected-chips').innerHTML = items.length
+    ? items.map(k => `<span class="chip">${k}</span>`).join('')
+    : '<span class="text-xs text-slate-400">Nessuno selezionato</span>';
+}
+
+function statCard(label, value, color) {
+  return `<div class="rounded p-3 text-center text-white ${color}">
+    <div class="text-xl font-bold">${value}</div>
+    <div class="text-[11px] mt-0.5 opacity-90">${label}</div>
+  </div>`;
+}
+function updateStats(s) {
+  document.getElementById('stats').innerHTML =
+    statCard('Repo',     s.repos,       'bg-slate-600') +
+    statCard('ECS',      s.ecs,         'bg-blue-700')  +
+    statCard('REST',     s.rest_calls,  'bg-rose-600')  +
+    statCard('Ext.',     s.external,    'bg-orange-600')+
+    statCard('DB',       s.dynamo,      'bg-violet-700')+
+    statCard('SQS',      s.sqs,         'bg-emerald-700')+
+    statCard('λ',        s.lambda,      'bg-amber-600') +
+    statCard('EB Rules', s.eventrules,  'bg-pink-700');
+}
+
+// ── Layout algorithm options ─────────────────────────────────────────────────
+function getLayoutOptions() {
+  const algo = document.getElementById('layout-algo')?.value || 'layered-lr-ns';
+  const common = {
+    'elk.spacing.nodeNode': '45',
+    'elk.layered.spacing.nodeNodeBetweenLayers': '200',
+    'elk.padding': '[top=0,left=0,bottom=0,right=0]',
+  };
+  switch (algo) {
+    case 'layered-lr-ns': return { ...common,
+      'elk.algorithm': 'layered', 'elk.direction': 'RIGHT',
+      'elk.layered.crossingMinimization.strategy': 'NETWORK_SIMPLEX',
+      'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX' };
+    case 'layered-tb-ns': return { ...common,
+      'elk.algorithm': 'layered', 'elk.direction': 'DOWN',
+      'elk.layered.crossingMinimization.strategy': 'NETWORK_SIMPLEX',
+      'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX' };
+    case 'layered-lr-ls': return { ...common,
+      'elk.algorithm': 'layered', 'elk.direction': 'RIGHT',
+      'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+      'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF' };
+    case 'layered-lr-lp': return { ...common,
+      'elk.algorithm': 'layered', 'elk.direction': 'RIGHT',
+      'elk.layered.crossingMinimization.strategy': 'NETWORK_SIMPLEX',
+      'elk.layered.nodePlacement.strategy': 'LINEAR_SEGMENTS' };
+    case 'stress': return {
+      'elk.algorithm': 'stress',
+      'elk.spacing.nodeNode': '150',
+      'elk.stress.desiredEdgeLength': String(CFG.nodeW + 350),
+      'elk.padding': '[top=0,left=0,bottom=0,right=0]' };
+    case 'stress-repo': return {};  // handled separately in computeLayout
+    default: return { ...common, 'elk.algorithm': 'layered', 'elk.direction': 'RIGHT',
+      'elk.layered.crossingMinimization.strategy': 'NETWORK_SIMPLEX',
+      'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX' };
+  }
+}
+
+// ── Layout via ELK ────────────────────────────────────────────────────────────
+async function computeLayout(nodes, edges) {
+  const algo = document.getElementById('layout-algo')?.value || 'layered-lr-ns';
+  const layoutOptions = getLayoutOptions();
+  const isLayered = layoutOptions['elk.algorithm'] === 'layered';
+  // EM: inflate node slots passed to ELK → guarantees a minimum buffer around each card
+  const EM = 8;
+
+  // Build flat ELK edge list (shared by all modes)
+  const seen = new Set();
+  const elkEdges = [];
+  edges.forEach((e, i) => {
+    const [s, t] = (isLayered && e.relation === 'reads') ? [e.to, e.from] : [e.from, e.to];
+    if (s === t) return;
+    const key = `${s}→${t}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    elkEdges.push({ id: `le${i}`, sources: [s], targets: [t] });
+  });
+
+  const positions = new Map();
+  let totalW, totalH;
+
+  if (algo === 'stress-repo') {
+    // ── Compound graph: one rectpacking group per repo, stress between groups ──
+    const byRepo = new Map();
+    nodes.forEach(n => {
+      const r = n.repo || '__ext__';
+      if (!byRepo.has(r)) byRepo.set(r, []);
+      byRepo.get(r).push(n);
+    });
+    const graph = {
+      id: 'root',
+      layoutOptions: {
+        'elk.algorithm': 'stress',
+        'elk.spacing.nodeNode': '80',
+        'elk.stress.desiredEdgeLength': String(CFG.nodeW + 400),
+        'elk.padding': '[top=20,left=20,bottom=20,right=20]',
+      },
+      children: [...byRepo.entries()].map(([repo, rNodes]) => ({
+        id: `_grp_${safe(repo)}`,
+        layoutOptions: {
+          'elk.algorithm': 'rectpacking',
+          'elk.spacing.nodeNode': String(EM * 2 + 4),
+          'elk.padding': '[top=32,left=10,bottom=10,right=10]',
+        },
+        children: rNodes.map(n => ({ id: n.id, width: CFG.nodeW + EM*2, height: CFG.nodeH + EM*2 })),
+      })),
+      edges: elkEdges,
+    };
+    const result = await elk.layout(graph);
+    totalW = (result.width  || 1200) + CFG.colPadX * 2;
+    totalH = (result.height || 800)  + CFG.topPad + CFG.botPad;
+    // Absolute positions: group offset + node offset + EM correction + global padding
+    const repoBounds = new Map();
+    result.children.forEach(grp => {
+      (grp.children || []).forEach(n => {
+        positions.set(n.id, {
+          x: grp.x + n.x + EM + CFG.colPadX,
+          y: grp.y + n.y + EM + CFG.topPad,
+        });
+      });
+      const repoKey = grp.id.replace(/^_grp_/, '');
+      repoBounds.set(repoKey, {
+        x: grp.x + CFG.colPadX, y: grp.y + CFG.topPad,
+        w: grp.width, h: grp.height,
+      });
+    });
+    computeLayout._repoBounds = repoBounds;
+  } else {
+    // ── Normal flat layout ──
+    const graph = {
+      id: 'root',
+      layoutOptions,
+      children: nodes.map(n => ({ id: n.id, width: CFG.nodeW + EM*2, height: CFG.nodeH + EM*2 })),
+      edges: elkEdges,
+    };
+    const result = await elk.layout(graph);
+    result.children.forEach(n => positions.set(n.id, { x: n.x + EM + CFG.colPadX, y: n.y + EM + CFG.topPad }));
+    totalW = (result.width  || 1000) + CFG.colPadX * 2;
+    totalH = (result.height || 600)  + CFG.topPad + CFG.botPad;
+    computeLayout._repoBounds = null;
+  }
+
+  return { positions, totalW, totalH };
+}
+
+// ── Smart port selection based on relative position ─────────────────────────
+function bestPorts(sp, tp) {
+  const scx = sp.x + CFG.nodeW/2, scy = sp.y + CFG.nodeH/2;
+  const tcx = tp.x + CFG.nodeW/2, tcy = tp.y + CFG.nodeH/2;
+  const dx = tcx - scx, dy = tcy - scy;
+  // Normalize by half-dimensions: chooses the face with the largest overlap
+  const adxN = Math.abs(dx) / (CFG.nodeW/2);
+  const adyN = Math.abs(dy) / (CFG.nodeH/2);
+  if (adxN >= adyN) {
+    // Horizontal dominant
+    return dx >= 0
+      ? { sx: sp.x+CFG.nodeW, sy: scy,            tx: tp.x,           ty: tcy, horiz: true  }
+      : { sx: sp.x,           sy: scy,            tx: tp.x+CFG.nodeW, ty: tcy, horiz: true  };
+  } else {
+    // Vertical dominant
+    return dy >= 0
+      ? { sx: scx, sy: sp.y+CFG.nodeH, tx: tcx, ty: tp.y,           horiz: false }
+      : { sx: scx, sy: sp.y,           tx: tcx, ty: tp.y+CFG.nodeH, horiz: false };
+  }
+}
+
+// ── Edge bezier path ──────────────────────────────────────────────────────────
+function edgePath(sp, tp, idx, total) {
+  const { sx, sy, tx, ty, horiz } = bestPorts(sp, tp);
+  const ddx = tx - sx, ddy = ty - sy;
+  const len = Math.sqrt(ddx*ddx + ddy*ddy) || 1;
+
+  // Perpendicular offset for parallel edges
+  const voff = total > 1 ? (idx - (total-1)/2) * 18 : 0;
+  const ox = -ddy/len * voff, oy = ddx/len * voff;
+
+  // Tangent length for control points (axis-aligned to the port face)
+  const ctrld = Math.max(Math.abs(ddx), Math.abs(ddy)) * 0.45 + 30;
+  const sign  = horiz ? Math.sign(ddx || 1) : Math.sign(ddy || 1);
+  const c1x = horiz ? sx + sign*ctrld : sx;
+  const c1y = horiz ? sy              : sy + sign*ctrld;
+  const c2x = horiz ? tx - sign*ctrld : tx;
+  const c2y = horiz ? ty              : ty - sign*ctrld;
+
+  return `M${sx+ox},${sy+oy} C${c1x+ox},${c1y+oy} ${c2x+ox},${c2y+oy} ${tx+ox},${ty+oy}`;
+}
+
+// ── Merge reads+writes on same pair into a single reads/writes edge ──────────────
+function mergeReadWrites(edges) {
+  const byPair = new Map();
+  edges.forEach(e => {
+    const k = `${e.from}|||${e.to}`;
+    if (!byPair.has(k)) byPair.set(k, { from: e.from, to: e.to, list: [] });
+    byPair.get(k).list.push(e);
+  });
+  const result = [];
+  byPair.forEach(({ from, to, list }) => {
+    const hasR = list.some(e => e.relation === 'reads');
+    const hasW = list.some(e => e.relation === 'writes');
+    if (hasR && hasW) {
+      const others = list.filter(e => e.relation !== 'reads' && e.relation !== 'writes');
+      result.push(...others, { from, to, relation: 'reads_writes' });
+    } else {
+      result.push(...list);
+    }
+  });
+  return result;
+}
+
+// ── Main render ─────────────────────────────────────────────────────────────
+async function renderDiagram(payload) {
+  currentPayload = payload;
+  const showLabels  = document.getElementById('show-edge-labels').checked;
+  const forwardOnly = document.getElementById('forward-only').checked;
+  const rels        = checkedRelations();
+  const nodeTypes   = checkedNodeTypes();
+  const visibleNodes = payload.nodes.filter(n => nodeTypes.has(n.type || 'resource'));
+  const existingIds  = new Set(visibleNodes.map(n => n.id));
+
+  let edges = payload.edges.filter(e =>
+    rels.has(e.relation) && existingIds.has(e.from) && existingIds.has(e.to)
+  );
+  if (forwardOnly) {
+    const fwd = new Set(edges.map(e => `${e.from}|${e.to}|${e.relation}`));
+    edges = edges.filter(e => {
+      const inv = INVERSE_OF[e.relation];
+      return !inv || !fwd.has(`${e.to}|${e.from}|${inv}`);
+    });
+  }
+  // Merge simultaneous reads+writes on the same pair into a single reads/writes edge
+  edges = mergeReadWrites(edges);
+  const aRepos = payload.analyzed_repos || [];
+  const repoColorMap = new Map();
+  let rci = 0;
+  aRepos.forEach(r => repoColorMap.set(r, REPO_COLORS[rci++ % REPO_COLORS.length]));
+  visibleNodes.forEach(n => { if (n.repo && !repoColorMap.has(n.repo)) repoColorMap.set(n.repo, EXT_REPO_COLOR); });
+
+  const { positions, totalW, totalH } = await computeLayout(visibleNodes, edges);
+  const svgEl = document.getElementById('diagram');
+  // Save zoom before re-render
+  const prevTransform = svgZoom ? d3.zoomTransform(svgEl) : null;
+  svgEl.innerHTML = '';
+
+  const svg = d3.select('#diagram')
+    .attr('viewBox', `0 0 ${totalW} ${totalH}`)
+    .attr('preserveAspectRatio', 'xMinYMin meet');
+
+  const g = svg.append('g');
+  svgZoom = d3.zoom().scaleExtent([0.15, 3]).on('zoom', ev => g.attr('transform', ev.transform));
+  svg.call(svgZoom).on('dblclick.zoom', null);
+  svg.on('click', ev => { if (ev.target === svgEl) clearFocus(); });
+
+  // Repo group background rectangles (stress-repo only)
+  if (computeLayout._repoBounds) {
+    const bgG = g.append('g').style('pointer-events', 'none');
+    computeLayout._repoBounds.forEach((b, safeRepo) => {
+      const repoName = [...repoColorMap.keys()].find(r => safe(r) === safeRepo) || safeRepo;
+      const color = repoColorMap.get(repoName) || '#334155';
+      bgG.append('rect')
+        .attr('x', b.x - 6).attr('y', b.y - 6)
+        .attr('width', b.w + 12).attr('height', b.h + 12)
+        .attr('rx', 14)
+        .attr('fill', color).attr('fill-opacity', 0.05)
+        .attr('stroke', color).attr('stroke-width', 1.5)
+        .attr('stroke-opacity', 0.3).attr('stroke-dasharray', '5,3');
+      bgG.append('text')
+        .attr('x', b.x + 6).attr('y', b.y + 16)
+        .attr('font-size', 11).attr('font-family', 'system-ui,sans-serif')
+        .attr('font-weight', '600').attr('fill', color).attr('fill-opacity', 0.65)
+        .text(repoName.split('/').pop());
+    });
+  }
+
+  // Defs: arrows
+  const defs = svg.append('defs');
+  Object.entries(EDGE_CFG).forEach(([rel, c]) => {
+    defs.append('marker').attr('id', mkId(rel))
+      .attr('viewBox','0 0 8 8').attr('refX',7).attr('refY',4)
+      .attr('markerWidth',9).attr('markerHeight',9).attr('orient','auto')
+      .append('path').attr('d','M0,1 L7,4 L0,7 Z').attr('fill', c.stroke);
+  });
+  ['in','out'].forEach((k, i) => {
+    defs.append('marker').attr('id',`arr-hl-${k}`)
+      .attr('viewBox','0 0 8 8').attr('refX',7).attr('refY',4)
+      .attr('markerWidth',10).attr('markerHeight',10).attr('orient','auto')
+      .append('path').attr('d','M0,1 L7,4 L0,7 Z').attr('fill', i===0?'#22c55e':'#3b82f6');
+  });
+
+  // Parallel-edge index
+  const pairCount = new Map(), pairCur = new Map();
+  edges.forEach(e => {
+    const k = `${e.from}||${e.to}`;
+    pairCount.set(k, (pairCount.get(k)||0)+1);
+  });
+  const eIdx = new Map();
+  edges.forEach(e => {
+    const k = `${e.from}||${e.to}`;
+    eIdx.set(e, pairCur.get(k)||0);
+    pairCur.set(k, (pairCur.get(k)||0)+1);
+  });
+
+  // Edges
+  const edgeG = g.append('g');
+  edges.forEach(e => {
+    const sp = positions.get(e.from), tp = positions.get(e.to);
+    if (!sp || !tp) return;
+    const c   = EDGE_CFG[e.relation] || { stroke:'#94a3b8', dash:'', label:e.relation, w:1.2 };
+    const k   = `${e.from}||${e.to}`;
+    const d   = edgePath(sp, tp, eIdx.get(e)||0, pairCount.get(k)||1);
+    const fid = safe(e.from), tid = safe(e.to);
+    const visPath = edgeG.append('path')
+      .attr('class', `edge ef-${fid} et-${tid}`)
+      .attr('d',d).attr('fill','none').attr('stroke',c.stroke)
+      .attr('stroke-width',c.w).attr('stroke-dasharray',c.dash)
+      .attr('marker-end',`url(#${mkId(e.relation)})`)
+      .attr('data-rel',e.relation).attr('data-from',e.from).attr('data-to',e.to);
+    // Transparent wider overlay for easier hover/click detection
+    edgeG.append('path')
+      .attr('d',d).attr('fill','none').attr('stroke','transparent')
+      .attr('stroke-width',12).style('cursor','pointer')
+      .on('mouseover', () => {
+        visPath.attr('stroke-width', c.w + 2.5);
+        d3.selectAll(`.elb.ef-${fid}.et-${tid}`).attr('font-size', 11).attr('font-weight', 700);
+      })
+      .on('mouseout', () => {
+        visPath.attr('stroke-width', c.w);
+        d3.selectAll(`.elb.ef-${fid}.et-${tid}`).attr('font-size', 9).attr('font-weight', null);
+      });
+    if (showLabels) {
+      const { sx: sx0, sy: sy0, tx: tx0, ty: ty0 } = bestPorts(sp, tp);
+      const cnt = pairCount.get(k)||1, cur = eIdx.get(e)||0;
+      const voff0 = cnt > 1 ? (cur - (cnt-1)/2) * 18 : 0;
+      const ddx0 = tx0-sx0, ddy0 = ty0-sy0;
+      const len0 = Math.sqrt(ddx0*ddx0+ddy0*ddy0) || 1;
+      const ox0 = -ddy0/len0 * voff0, oy0 = ddx0/len0 * voff0;
+      // Midpoint of bezier + small perpendicular offset for readability
+      const lx = (sx0+tx0)/2 + ox0 + (ddy0/len0)*9;
+      const ly = (sy0+ty0)/2 + oy0 - (ddx0/len0)*9 - 4;
+      edgeG.append('text')
+        .attr('class',`elb ef-${fid} et-${tid}`)
+        .attr('x', lx).attr('y', ly)
+        .attr('text-anchor','middle').attr('font-size',9).attr('font-family','monospace')
+        .attr('fill',c.stroke).attr('pointer-events','none').text(c.label);
+    }
+  });
+
+  // Nodes
+  const nodeG = g.append('g');
+  visibleNodes.forEach(n => {
+    const pos = positions.get(n.id);
+    if (!pos) return;
+    const nc  = NODE_CFG[n.type] || NODE_CFG.resource;
+    const id  = safe(n.id);
+    const grp = nodeG.append('g')
+      .attr('class', `node nd-${id}`)
+      .attr('transform', `translate(${pos.x},${pos.y})`)
+      .style('cursor','pointer')
+      .on('click', ev => {
+        ev.stopPropagation();
+        if (document.getElementById('focus-neighborhood').checked) applyFocus(n, edges);
+      });
+
+    const repoColor = repoColorMap.get(n.repo) || '#334155';
+    // Shadow
+    grp.append('rect').attr('x',2).attr('y',3)
+      .attr('width',CFG.nodeW).attr('height',CFG.nodeH).attr('rx',CFG.nodeRx)
+      .attr('fill','rgba(0,0,0,0.09)').style('pointer-events','none');
+    // Card (border = type color)
+    grp.append('rect').attr('class',`nr nr-${id}`)
+      .attr('width',CFG.nodeW).attr('height',CFG.nodeH).attr('rx',CFG.nodeRx)
+      .attr('fill','#fff').attr('stroke',nc.bg).attr('stroke-width',1.8);
+    // Left accent = type color
+    grp.append('rect').attr('width',6).attr('height',CFG.nodeH).attr('rx',CFG.nodeRx)
+      .attr('fill',nc.bg).style('pointer-events','none');
+    // Badge = type color
+    grp.append('rect').attr('x',9).attr('y',CFG.nodeH/2-9).attr('width',32).attr('height',18)
+      .attr('rx',4).attr('fill',nc.bg).style('pointer-events','none');
+    grp.append('text').attr('x',25).attr('y',CFG.nodeH/2+4)
+      .attr('text-anchor','middle').attr('font-size',8.5).attr('font-weight','800')
+      .attr('font-family','monospace').attr('fill',nc.text).attr('pointer-events','none')
+      .text(nc.badge);
+    // Resource name (upper line) — mid-truncation preserves prefix (service) and suffix (resource type)
+    const _raw = n.label;
+    const lbl  = _raw.length <= 24
+      ? _raw
+      : _raw.slice(0, 13) + '…' + _raw.slice(-10);   // 13 + … + 10 = 24 visible chars
+    grp.append('text').attr('class', `nlbl nlbl-${id}`)
+      .attr('x',47).attr('y',22)
+      .attr('font-size',11.5).attr('font-family','system-ui,sans-serif')
+      .attr('font-weight','500').attr('fill','#1e293b').attr('pointer-events','none')
+      .text(lbl).append('title').text(_raw);
+    if (_raw !== lbl) {
+      grp.on('mouseenter.lbl', () =>
+        d3.select(`.nlbl-${id}`).text(_raw)
+          .attr('stroke', 'white').attr('stroke-width', 3).style('paint-order', 'stroke')
+      ).on('mouseleave.lbl', () =>
+        d3.select(`.nlbl-${id}`).text(lbl)
+          .attr('stroke', null).attr('stroke-width', null)
+      );
+    }
+    // Repo name subtitle (lower line)
+    const shortRepo = n.repo ? (n.repo.length > 29 ? '…'+n.repo.slice(-28) : n.repo) : '';
+    grp.append('text').attr('x',47).attr('y',40)
+      .attr('font-size',9.5).attr('font-family','system-ui,sans-serif')
+      .attr('fill','#94a3b8').attr('font-style','italic').attr('pointer-events','none')
+      .text(shortRepo);
+  });
+
+  // Restore or fit zoom
+  if (prevTransform && prevTransform.k !== 1) {
+    svg.call(svgZoom.transform, prevTransform);
+  } else {
+    const W = svgEl.clientWidth || totalW;
+    svg.call(svgZoom.transform, d3.zoomIdentity.translate(12, 12).scale(Math.min(0.88, W / totalW)));
+  }
+}
+
+// ── Focus ─────────────────────────────────────────────────────────────────────
+function applyFocus(n, edges) {
+  const id = safe(n.id);
+  d3.selectAll('.node').style('opacity', 0.13);
+  d3.selectAll('.edge,.elb').style('opacity', 0.05);
+
+  const connNodes = new Set([n.id]);
+  const inE = [], outE = [];
+  edges.forEach(e => {
+    if (e.from === n.id) { connNodes.add(e.to);   outE.push(e); }
+    if (e.to   === n.id) { connNodes.add(e.from); inE.push(e); }
+  });
+
+  connNodes.forEach(cid => d3.select(`.nd-${safe(cid)}`).style('opacity', 1));
+
+  const hl = (arr, color, arrowKey) => arr.forEach(e => {
+    const fid = safe(e.from), tid = safe(e.to);
+    d3.selectAll(`.ef-${fid}.et-${tid}`)
+      .style('opacity',1).attr('stroke',color)
+      .attr('stroke-width',(EDGE_CFG[e.relation]?.w||1.5)+1.2)
+      .attr('marker-end',`url(#arr-hl-${arrowKey})`);
+    d3.selectAll(`.elb.ef-${fid}.et-${tid}`)
+      .style('opacity', 1)
+      .attr('fill', color)
+      .attr('font-size', 10)
+      .attr('font-weight', 700)
+      .attr('stroke', 'white')
+      .attr('stroke-width', 2.5)
+      .style('paint-order', 'stroke');
+    d3.select(`.nr-${safe(e.to === n.id ? e.from : e.to)}`)
+      .attr('stroke',color).attr('stroke-width',2.8);
+  });
+  hl(inE,  '#22c55e', 'in');
+  hl(outE, '#3b82f6', 'out');
+  d3.select(`.nr-${id}`).attr('stroke','#f59e0b').attr('stroke-width',3.2);
+  d3.select(`.nd-${id}`).style('opacity',1);
+  // Show full name on selected node
+  d3.select(`.nlbl-${id}`).text(n.label)
+    .attr('stroke', 'white').attr('stroke-width', 3).style('paint-order', 'stroke');
+
+  const nc = NODE_CFG[n.type]||NODE_CFG.resource;
+  const rows = (arr, dir) => arr.length
+    ? arr.map(e => {
+        const other = dir==='out' ? e.to : e.from;
+        const short = other.split('/').pop()||other;
+        const c = EDGE_CFG[e.relation];
+        const arrow = dir==='out' ? '↗' : '↙';
+        return `<div class="flex items-center gap-1.5 mt-0.5">
+          <span style="color:${c?.stroke||'#666'}" class="font-mono text-[9px] shrink-0">${e.relation}</span>
+          <span class="text-slate-600 text-[10px] truncate" title="${other}">${arrow} ${short}</span>
+        </div>`;
+      }).join('')
+    : '<span class="text-slate-400 text-[10px]">—</span>';
+
+  document.getElementById('details').innerHTML = `
+    <div class="flex items-center gap-2 mb-1.5">
+      <span class="px-1.5 py-0.5 rounded text-[10px] font-bold text-white" style="background:${nc.bg}">${nc.badge}</span>
+      <span class="font-semibold text-slate-800 text-sm">${n.label}</span>
+    </div>
+    <div class="text-slate-400 text-[10px] mb-2 font-mono">${n.resourceType}</div>
+    <div class="text-[10px]"><div class="font-semibold text-slate-500 mb-0.5">↙ Incoming <span class="text-green-500">(verde)</span></div>${rows(inE,'in')}</div>
+    <div class="text-[10px] mt-2"><div class="font-semibold text-slate-500 mb-0.5">↗ Outgoing <span class="text-blue-500">(blu)</span></div>${rows(outE,'out')}</div>`;
+}
+
+async function clearFocus() {
+  const saved = d3.zoomTransform(document.getElementById('diagram'));
+  if (currentPayload) await renderDiagram(currentPayload);
+  if (svgZoom) d3.select('#diagram').call(svgZoom.transform, saved);
+  document.getElementById('details').textContent = 'Seleziona un nodo per vedere dettagli e connessioni.';
+}
+
+// ── Run analysis ──────────────────────────────────────────────────────────────
+async function runAnalysis() {
+  document.getElementById('log').textContent = '';
+  const repos = [...selected.values()];
+  if (!repos.length) { appendLog('⚠️ Seleziona almeno un repository.'); return; }
+  appendLog(`⏳ Avvio analisi su ${repos.length} repo...`);
+  if (typeof window.buildMultiRepoGraph === 'undefined') {
+    appendLog('⚠️ PyScript non pronto — attendi e riprova.'); return;
+  }
+  try {
+    const resultJson = await window.buildMultiRepoGraph.callPromising(JSON.stringify(repos));
+    const data = JSON.parse(resultJson);
+    if (data.error) { appendLog(data.log||''); appendLog('✗ '+data.error); return; }
+    appendLog(data.log||'');
+    appendLog(`\n✅ Completato — repo:${data.stats.repos} ecs:${data.stats.ecs} rest:${data.stats.rest_calls}`);
+    updateStats(data.stats);
+    await renderDiagram(data.graph);
+  } catch(e) { appendLog('✗ Errore JS: '+e); }
+}
+
+document.getElementById('add-custom').addEventListener('click', () => {
+  const input = document.getElementById('custom-repo');
+  const raw = input.value.trim();
+  if (!raw.includes('/')) return;
+  const [owner, repo] = raw.split('/', 2);
+  const key = `${owner}/${repo}`;
+  selected.set(key, { owner, repo });
+  renderSelected();
+  input.value = '';
+});
+
+document.getElementById('run-btn').addEventListener('click', runAnalysis);
+document.getElementById('reset-focus').addEventListener('click', clearFocus);
+document.querySelectorAll('.flow-filter').forEach(el =>
+  el.addEventListener('change', () => { if (currentPayload) renderDiagram(currentPayload); })
+);
+document.getElementById('layout-algo').addEventListener('change', () => { if (currentPayload) renderDiagram(currentPayload); });
+document.querySelectorAll('input.node-filter').forEach(el =>
+  el.addEventListener('change', () => { if (currentPayload) renderDiagram(currentPayload); })
+);
+
+renderPresets();
+updateStats({ repos:0, ecs:0, rest_calls:0, external:0, dynamo:0, sqs:0, lambda:0, eventrules:0 });
+</script>
+
+<script type="py" config='{"packages":["pyyaml","pyodide-http"],"fetch":[{"files":["./models.py","./github_fetcher.py","./cfn_parser.py","./pom_parser.py","./multi_repo_analyzer.py","./default_params.json"]}]}'>
+import io
+import json
+import sys
+
+import pyodide_http
+from pyscript import window
+from multi_repo_analyzer import MultiRepoGraphAnalyzer
+
+pyodide_http.patch_all()
+
+analyzer = MultiRepoGraphAnalyzer()
+
+
+async def build_multi_repo_graph(repos_json):
+    buf = io.StringIO()
+    sys.stdout = buf
+
+    try:
+        repos = json.loads(repos_json) if repos_json else []
+        result = await analyzer.analyze(repos)
+        result["log"] = buf.getvalue()
+        return json.dumps(result)
+    except Exception as e:
+        import traceback
+        return json.dumps({"error": str(e), "log": buf.getvalue() + "\n" + traceback.format_exc()})
+    finally:
+        sys.stdout = sys.__stdout__
+
+
+window.buildMultiRepoGraph = build_multi_repo_graph
+</script>
+</body>
+</html>
