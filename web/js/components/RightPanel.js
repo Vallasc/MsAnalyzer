@@ -78,7 +78,27 @@ function NodeDetail({ node, edges, inE, outE, repoList, onOpenMd }) {
     <div style="font-size:10.5px;font-weight:600;color:#3b82f6;margin-top:12px;margin-bottom:4px;display:flex;align-items:center;gap:4px;">${Icon({name:'arrow-up-right', size:12, color:'#3b82f6'})} Outgoing</div>
     ${rows(outE, 'out')}
     ${owner && repoName ? html`<${ReadmeSection} owner=${owner} repo=${repoName} onOpenMd=${onOpenMd} />` : null}
+    ${node.sourceUrl ? html`<${SourceSection} node=${node} />` : null}
   `;
+}
+
+function SourceSection({ node }) {
+  const s = node.source || {};
+  const fileShort = s.file ? s.file.split('/').pop() : 'sorgente';
+  const lines = s.start
+    ? (s.end && s.end !== s.start ? `L${s.start}-L${s.end}` : `L${s.start}`)
+    : '';
+  return html`
+    <div style="border-top:1px solid #e2e8f0;margin:14px 0 8px;"></div>
+    <div style="display:flex;align-items:center;gap:4px;margin-bottom:8px;">
+      <span style="font-size:10.5px;font-weight:600;color:#64748b;display:flex;align-items:center;gap:4px;">${Icon({name:'code', size:12, color:'#64748b'})} Definizione</span>
+    </div>
+    <a href=${node.sourceUrl} target="_blank" rel="noopener" title=${s.file || node.sourceUrl}
+      style="display:flex;align-items:center;gap:6px;padding:7px 10px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:9px;font-size:11px;color:#475569;text-decoration:none;">
+      ${Icon({name:'github', size:13})}
+      <span style="font-family:monospace;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${fileShort}${lines ? html` <span style="color:#94a3b8;">#${lines}</span>` : ''}</span>
+      ${Icon({name:'external-link', size:11})}
+    </a>`;
 }
 
 function ReadmeSection({ owner, repo, onOpenMd }) {

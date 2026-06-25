@@ -13,6 +13,7 @@ import { LeftPanel }   from './components/LeftPanel.js';
 import { RightPanel }  from './components/RightPanel.js';
 import { SearchBar }   from './components/SearchBar.js';
 import { ZoomControls } from './components/ZoomControls.js';
+import { ExportMenu }   from './components/ExportMenu.js';
 import { MdModal }     from './components/MdModal.js';
 
 initMermaid();
@@ -31,6 +32,7 @@ function App() {
       rels, types,
       labels: opts.labels ?? DEFAULT_FILTERS.labels,
       focus:  opts.focus  ?? DEFAULT_FILTERS.focus,
+      hideEdges: opts.hideEdges ?? DEFAULT_FILTERS.hideEdges,
     };
   });
   const [layout, setLayout] = useState(() => lsGet(LS_LAYOUT, 'stress'));
@@ -104,8 +106,11 @@ function App() {
     }
     setLoading(true);
     setLogLines([]);
+    // Cede un frame al browser così l'overlay di caricamento viene dipinto
+    // prima della chiamata sincrona bloccante a PyScript.
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
     try {
-      const resultJson = await window.buildMultiRepoGraph.callPromising(
+      const resultJson = window.buildMultiRepoGraph(
         JSON.stringify(repos.map(r => ({ owner: r.owner, repo: r.repo })))
       );
       const data = JSON.parse(resultJson);
@@ -192,6 +197,9 @@ function App() {
 
     <!-- Zoom controls -->
     <${ZoomControls} lastW=${lastSize.w} lastH=${lastSize.h} />
+
+    <!-- Export menu -->
+    <${ExportMenu} hasGraph=${!!payload} selectedNode=${selectedNode} />
 
     <!-- MD Modal -->
     ${mdModal ? html`

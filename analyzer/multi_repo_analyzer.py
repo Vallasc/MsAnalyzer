@@ -23,6 +23,7 @@ class MultiRepoGraphAnalyzer:
         self.pending_rest_calls: List[Dict[str, str]] = []
         self.repo_to_ecs_arns: Dict[str, List[str]] = {}
         self.repo_to_all_arns: Dict[str, List[str]] = {}
+        self.repo_to_owner: Dict[str, str] = {}
 
     @staticmethod
     def _norm(value: str) -> str:
@@ -57,13 +58,13 @@ class MultiRepoGraphAnalyzer:
 
         return dep.name
 
-    async def _fetch_first(self, owner: str, repo: str, paths: List[str]) -> Tuple[Optional[str], Optional[str]]:
+    def _fetch_first(self, owner: str, repo: str, paths: List[str]) -> Tuple[Optional[str], Optional[str], Optional[str]]:
         for path in paths:
             for branch in ("main", "develop", "master"):
-                content = await self.fetcher.fetch_file(owner, repo, path, branch)
+                content = self.fetcher.fetch_file(owner, repo, path, branch)
                 if content is not None:
-                    return path, content
-        return None, None
+                    return path, content, branch
+        return None, None, None
 
     def _load_default_params(self, parser: CloudFormationParser):
         try:
@@ -77,30 +78,31 @@ class MultiRepoGraphAnalyzer:
     def _current_arn_set(self) -> set:
         return {r.arn for r in self._all_resources() if r.arn}
 
-    async def _analyze_repo(self, owner: str, repo: str):
+    def _analyze_repo(self, owner: str, repo: str):
         repo_key = self._norm(repo)
+        self.repo_to_owner[repo_key] = owner
         print(f"\n📦 Repo: {owner}/{repo}")
 
         before = self._current_arn_set()
 
         parser = CloudFormationParser(graph=self.graph)
         self._load_default_params(parser)
-        await parser.load_params_github(owner, repo)
+        parser.load_params_github(owner, repo)
 
         existing_ecs = set(self.graph.ecs_services.keys())
 
-        _, storage = await self._fetch_first(owner, repo, ["scripts/aws/cfn/storage.yml"])
-        _, micro = await self._fetch_first(owner, repo, ["scripts/aws/cfn/microservice.yml"])
+        storage_path, storage, storage_branch = self._fetch_first(owner, repo, ["scripts/aws/cfn/storage.yml"])
+        micro_path, micro, micro_branch = self._fetch_first(owner, repo, ["scripts/aws/cfn/microservice.yml"])
 
         if storage:
             print("  🗄️ parsing storage.yml")
-            parser.process_template(storage)
+            parser.process_template(storage, source_file=storage_path, source_branch=storage_branch)
         else:
             print("  ℹ️ storage.yml non trovato")
 
         if micro:
             print("  🚀 parsing microservice.yml")
-            parser.process_template(micro)
+            parser.process_template(micro, source_file=micro_path, source_branch=micro_branch)
         else:
             print("  ℹ️ microservice.yml non trovato")
 
@@ -116,7 +118,7 @@ class MultiRepoGraphAnalyzer:
         else:
             print("  ⚠️ Nessun ECS estratto dal CFN")
 
-        pom_path, pom_content = await self._fetch_first(owner, repo, ["pom.xml"])
+        pom_path, pom_content, _ = self._fetch_first(owner, repo, ["pom.xml"])
         if not pom_content:
             print("  ℹ️ pom.xml non trovato")
             return
@@ -238,13 +240,35 @@ class MultiRepoGraphAnalyzer:
         for res in resources:
             if not res.arn:
                 continue
-            nodes.append({
+            repo_key = arn_to_repo.get(res.arn, "unknown")
+            owner = self.repo_to_owner.get(repo_key)
+            node = {
                 "id": res.arn,
                 "label": res.name,
                 "type": self._resource_type_label(res),
                 "resourceType": res.resource_type,
-                "repo": arn_to_repo.get(res.arn, "unknown"),
-            })
+                "repo": repo_key,
+            }
+            if owner and repo_key and repo_key != "unknown":
+                node["owner"] = owner
+                node["repoUrl"] = f"https://github.com/{owner}/{repo_key}"
+                src = getattr(res, "source", None)
+                if src and src.get("file") and src.get("start"):
+                    branch = src.get("branch") or "develop"
+                    start = src.get("start")
+                    end = src.get("end")
+                    frag = f"#L{start}" + (f"-L{end}" if end and end != start else "")
+                    node["sourceUrl"] = (
+                        f"https://github.com/{owner}/{repo_key}/blob/"
+                        f"{branch}/{src['file']}{frag}"
+                    )
+                    node["source"] = {
+                        "file": src["file"],
+                        "branch": branch,
+                        "start": start,
+                        "end": end,
+                    }
+            nodes.append(node)
 
         edge_map = {
             "reads_from":  "reads",
@@ -277,7 +301,49 @@ class MultiRepoGraphAnalyzer:
             "analyzed_repos": list(self.repo_to_all_arns.keys()),
         }
 
-    async def analyze(self, repo_list: List[Dict[str, str]]) -> Dict:
+    @staticmethod
+    def build_adjacency_csv(
+        nodes: List[Dict], edges: List[Dict]
+    ) -> str:
+        """Costruisce una matrice di adiacenza in formato CSV.
+
+        - Le intestazioni (prima riga e prima colonna) sono i nodi.
+        - La cella [riga][colonna] contiene la/le relazione/i dell'arco
+          orientato riga -> colonna, se presente (relazioni multiple unite
+          con ';'); stringa vuota se non esiste alcun arco.
+        """
+        import csv as _csv
+        import io as _io
+
+        ids = [n.get("id") for n in nodes if n.get("id")]
+        label_of = {
+            n["id"]: (n.get("label") or n["id"])
+            for n in nodes
+            if n.get("id")
+        }
+        id_set = set(ids)
+
+        # from -> { to -> "rel1;rel2" }
+        matrix: Dict[str, Dict[str, str]] = {}
+        for e in edges:
+            src = e.get("from")
+            dst = e.get("to")
+            rel = e.get("relation", "")
+            if src not in id_set or dst not in id_set:
+                continue
+            row = matrix.setdefault(src, {})
+            row[dst] = f"{row[dst]};{rel}" if dst in row else rel
+
+        buf = _io.StringIO()
+        writer = _csv.writer(buf, lineterminator="\r\n")
+        writer.writerow([""] + [label_of[i] for i in ids])
+        for src in ids:
+            row = matrix.get(src, {})
+            writer.writerow([label_of[src]] + [row.get(dst, "") for dst in ids])
+
+        return buf.getvalue()
+
+    def analyze(self, repo_list: List[Dict[str, str]]) -> Dict:
         print("\n============================================================")
         print("🔍 ANALISI MULTI-REPO")
         print("============================================================")
@@ -286,6 +352,7 @@ class MultiRepoGraphAnalyzer:
         self.pending_rest_calls = []
         self.repo_to_ecs_arns = {}
         self.repo_to_all_arns = {}
+        self.repo_to_owner = {}
 
         valid = []
         for item in repo_list:
@@ -295,7 +362,7 @@ class MultiRepoGraphAnalyzer:
                 valid.append({"owner": owner, "repo": repo})
 
         for item in valid:
-            await self._analyze_repo(item["owner"], item["repo"])
+            self._analyze_repo(item["owner"], item["repo"])
 
         self.reconcile_connections()
 

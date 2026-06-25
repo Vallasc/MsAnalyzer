@@ -18,7 +18,7 @@ class GitHubFetcher:
         return None, None
 
     @staticmethod
-    async def fetch_file(owner: str, repo: str, path: str, branch: str = 'develop'):
+    def fetch_file(owner: str, repo: str, path: str, branch: str = 'develop'):
         """Scarica un singolo file da GitHub"""
         import urllib.request
         import urllib.error

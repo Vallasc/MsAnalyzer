@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SEND MsAnalyzer</title>
-  <link rel="stylesheet" href="https://pyscript.net/releases/2025.11.2/core.css" />
-  <script type="module" src="https://pyscript.net/releases/2025.11.2/core.js"></script>
+  <link rel="stylesheet" href="https://pyscript.net/releases/2026.6.1/core.css" />
+  <script type="module" src="https://pyscript.net/releases/2026.6.1/core.js"></script>
   <script src="https://unpkg.com/d3@7/dist/d3.min.js"></script>
   <script src="https://unpkg.com/elkjs@0.9.3/lib/elk.bundled.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
@@ -50,12 +50,12 @@ from multi_repo_analyzer import MultiRepoGraphAnalyzer
 pyodide_http.patch_all()
 analyzer = MultiRepoGraphAnalyzer()
 
-async def build_multi_repo_graph(repos_json):
+def build_multi_repo_graph(repos_json):
     buf = io.StringIO()
     sys.stdout = buf
     try:
         repos = json.loads(repos_json) if repos_json else []
-        result = await analyzer.analyze(repos)
+        result = analyzer.analyze(repos)
         result["log"] = buf.getvalue()
         return json.dumps(result)
     except Exception as e:
@@ -65,6 +65,13 @@ async def build_multi_repo_graph(repos_json):
         sys.stdout = sys.__stdout__
 
 window.buildMultiRepoGraph = build_multi_repo_graph
+
+def build_graph_csv(nodes_json, edges_json):
+    nodes = json.loads(nodes_json) if nodes_json else []
+    edges = json.loads(edges_json) if edges_json else []
+    return MultiRepoGraphAnalyzer.build_adjacency_csv(nodes, edges)
+
+window.buildGraphCsv = build_graph_csv
 </script>
 
 <!-- Preact app (ES module) -->

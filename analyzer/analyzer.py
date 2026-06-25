@@ -28,7 +28,7 @@ class MicroserviceAnalyzer:
         self.cfn_parser = CloudFormationParser()
         self.pom_parser = PomParser()
     
-    async def analyze(self, repo_url):
+    def analyze(self, repo_url):
         """Esegue l'analisi completa del microservizio"""
         print(f"\n{'='*60}")
         print(f"🔍 ANALISI MICROSERVIZIO")
@@ -46,13 +46,13 @@ class MicroserviceAnalyzer:
         
         # Step 1: Download dei file
         print("📥 Download files...")
-        files = await self._download_files(owner, repo)
+        files = self._download_files(owner, repo)
         if not files:
             return None
         
         # Step 2: Carica parametri CloudFormation
         print("\n⚙️ Caricamento parametri CloudFormation...")
-        await self.cfn_parser.load_params_github(owner, repo, 'develop')
+        self.cfn_parser.load_params_github(owner, repo, 'develop')
         
         # Step 3: Parse storage.yml — outputs diventano params per il template successivo
         print("\n🗄️ Analisi storage.yml...")
@@ -87,19 +87,19 @@ class MicroserviceAnalyzer:
         
         return result
     
-    async def _download_files(self, owner, repo):
+    def _download_files(self, owner, repo):
         """Scarica i file necessari"""
         files = {}
         
-        pom = await self.fetcher.fetch_file(owner, repo, 'pom.xml', 'main')
+        pom = self.fetcher.fetch_file(owner, repo, 'pom.xml', 'main')
         if pom:
             files['pom.xml'] = pom
         
-        microservice = await self.fetcher.fetch_file(owner, repo, 'scripts/aws/cfn/microservice.yml', 'main')
+        microservice = self.fetcher.fetch_file(owner, repo, 'scripts/aws/cfn/microservice.yml', 'main')
         if microservice:
             files['microservice.yml'] = microservice
         
-        storage = await self.fetcher.fetch_file(owner, repo, 'scripts/aws/cfn/storage.yml', 'main')
+        storage = self.fetcher.fetch_file(owner, repo, 'scripts/aws/cfn/storage.yml', 'main')
         if storage:
             files['storage.yml'] = storage
         
@@ -629,7 +629,7 @@ async def analyze_repo(event=None):
             output.innerHTML = '<p style="color: red;">❌ Inserisci un URL repository valido</p>'
             return
         
-        result = await analyzer.analyze(repo_url)
+        result = analyzer.analyze(repo_url)
         
         if result:
             UIManager.create_tabs()

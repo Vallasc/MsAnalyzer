@@ -116,6 +116,31 @@ body { overflow: hidden; background: #ffffff; font-family: system-ui, -apple-sys
 }
 .zbtn:hover { color:#0f172a; background:rgba(255,255,255,0.4); }
 
+/* Export controls */
+#export-ctrls { position:fixed; bottom:22px; right:22px; z-index:300; }
+#export-pop {
+  position:absolute; bottom:calc(100% + 10px); right:0;
+  width:184px; padding:6px; border-radius:16px;
+  background:rgba(255,255,255,0.92); backdrop-filter:blur(20px) saturate(180%); -webkit-backdrop-filter:blur(20px) saturate(180%);
+  border:1px solid rgba(255,255,255,0.6);
+  box-shadow:0 12px 40px rgba(0,0,0,0.18), 0 4px 12px rgba(0,0,0,0.08);
+  display:flex; flex-direction:column; gap:3px;
+}
+.exp-scope { display:flex; gap:4px; padding:2px; background:#f1f5f9; border-radius:10px; margin-bottom:4px; }
+.exp-scope button {
+  flex:1; padding:6px 8px; border:none; border-radius:8px; cursor:pointer;
+  font-size:11px; font-weight:600; color:#64748b; background:transparent;
+}
+.exp-scope button.on { background:#fff; color:#0f172a; box-shadow:0 1px 4px rgba(0,0,0,0.1); }
+.exp-scope button:disabled { opacity:0.4; cursor:not-allowed; }
+.exp-item {
+  display:flex; align-items:center; gap:9px; width:100%;
+  padding:8px 10px; border:none; border-radius:9px; cursor:pointer;
+  font-size:12px; font-weight:500; color:#334155; background:transparent;
+}
+.exp-item:hover { background:#f1f5f9; color:#0f172a; }
+.exp-err { padding:6px 10px; font-size:10.5px; color:#b91c1c; line-height:1.4; }
+
 /* Search bar */
 #search-bar {
   position:fixed; top:14px; left:50%; transform:translateX(-50%); z-index:300;
@@ -164,3 +189,13 @@ body { overflow: hidden; background: #ffffff; font-family: system-ui, -apple-sys
 
 /* Stats */
 .spill { padding:4px 11px; border-radius:20px; font-size:11px; font-weight:600; color:#fff; }
+
+/* Firefox fallback: combinare `filter: url(#…)` (SVG feDisplacementMap) con
+   `backdrop-filter` sullo stesso elemento azzera il backdrop-filter in Firefox.
+   Rimuoviamo il filtro di distorsione e teniamo solo la sfocatura del backdrop. */
+@-moz-document url-prefix() {
+  .panel::after,
+  #search-bar::after {
+    filter: none; -webkit-filter: none;
+  }
+}

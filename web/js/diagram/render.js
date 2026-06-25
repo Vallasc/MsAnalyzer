@@ -13,11 +13,13 @@ let _currentT     = d3.zoomIdentity;
 let _lastPositions = new Map();
 let _lastW = 1000, _lastH = 600;
 let _onNodeClick  = null; // callback(node, edges)
+let _lastGraph    = { nodes: [], edges: [] }; // grafo effettivamente disegnato (post-filtri)
 
 // ── Public API ──────────────────────────────────────────────────────────────
 export function setNodeClickHandler(fn) { _onNodeClick = fn; }
 export function getPositions()          { return _lastPositions; }
 export function getLastSize()           { return { w: _lastW, h: _lastH }; }
+export function getRenderedGraph()      { return _lastGraph; }
 
 export function fitView(W = _lastW, H = _lastH) {
   if (!_svgZoom) return;
@@ -62,7 +64,7 @@ export function applyFocus(node, edges) {
 
   const hl = (arr, color, arrowKey) => arr.forEach(e => {
     const fid = safe(e.from), tid = safe(e.to);
-    d3.selectAll(`.ef-${fid}.et-${tid}`)
+    d3.selectAll(`.edge.ef-${fid}.et-${tid}`)
       .style('opacity', 1).attr('stroke', color)
       .attr('stroke-width', (EDGE_CFG[e.relation]?.w || 1.5) + 1.2)
       .attr('marker-end', `url(#arr-hl-${arrowKey})`);
@@ -119,7 +121,7 @@ function _undimUI() { _PAN_ELS.forEach(id => { const el = document.querySelector
 
 // ── Main render ─────────────────────────────────────────────────────────────
 export async function render(payload, { filters, layout, doFit = false, clearBg = false }) {
-  const { rels, types, labels: showLabels } = filters;
+  const { rels, types, labels: showLabels, hideEdges = false } = filters;
   const relsSet  = new Set(rels);
   const typesSet = new Set(types);
 
@@ -130,6 +132,7 @@ export async function render(payload, { filters, layout, doFit = false, clearBg 
     relsSet.has(e.relation)
   );
   edges = _mergeReadWrites(edges);
+  _lastGraph = { nodes: visibleNodes, edges };
 
   const repoColorMap = new Map();
   let _rci = 0;
@@ -176,7 +179,7 @@ export async function render(payload, { filters, layout, doFit = false, clearBg 
   // Repo group backgrounds
   const repoBounds = lastRepoBounds;
   if (repoBounds) {
-    const bgG = g.append('g').style('pointer-events','none');
+    const bgG = g.append('g').attr('class','repo-bg').style('pointer-events','none');
     repoBounds.forEach((b, safeRepo) => {
       const repoName = [...repoColorMap.keys()].find(r => safe(r) === safeRepo) || safeRepo;
       const color = repoColorMap.get(repoName) || '#334155';
@@ -229,7 +232,7 @@ export async function render(payload, { filters, layout, doFit = false, clearBg 
 
   // Edges
   const edgeG = g.append('g');
-  edges.forEach(e => {
+  if (!hideEdges) edges.forEach(e => {
     const sp = positions.get(e.from), tp = positions.get(e.to);
     if (!sp || !tp) return;
     const c   = EDGE_CFG[e.relation] || { stroke:'#94a3b8', dash:'', label:e.relation, w:1.2 };
@@ -244,7 +247,8 @@ export async function render(payload, { filters, layout, doFit = false, clearBg 
       .attr('d',d).attr('fill','none').attr('stroke',c.stroke)
       .attr('stroke-width',c.w).attr('stroke-dasharray',c.dash)
       .attr('marker-end',`url(#arr-${e.relation})`);
-    edgeG.append('path').attr('d',d).attr('fill','none').attr('stroke','transparent').attr('stroke-width',12)
+    edgeG.append('path').attr('class',`ehit ef-${fid} et-${tid}`)
+      .attr('d',d).attr('fill','none').attr('stroke','transparent').attr('stroke-width',12)
       .style('cursor','pointer')
       .on('mouseover', () => { visPath.attr('stroke-width', c.w+2.5); d3.selectAll(`.elb.ef-${fid}.et-${tid}`).attr('font-size',11).attr('font-weight',700); })
       .on('mouseout',  () => { visPath.attr('stroke-width', c.w);     d3.selectAll(`.elb.ef-${fid}.et-${tid}`).attr('font-size',9).attr('font-weight',null); });
@@ -275,6 +279,9 @@ export async function render(payload, { filters, layout, doFit = false, clearBg 
     const grp = nodeG.append('g')
       .attr('class',`node nd-${id}`)
       .attr('transform',`translate(${pos.x},${pos.y})`)
+      .attr('data-repo', n.repo || '')
+      .attr('data-repo-url', n.repoUrl || '')
+      .attr('data-label', _raw)
       .style('cursor','pointer')
       .on('click', ev => {
         ev.stopPropagation();

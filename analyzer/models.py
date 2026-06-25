@@ -9,6 +9,8 @@ class AWSResource:
         self.name = name              # Nome effettivo della risorsa
         self.resource_type = resource_type
         self.arn = None               # ARN della risorsa (se disponibile)
+        # Posizione nel sorgente CFN: {"file", "branch", "start", "end"} (1-based)
+        self.source = None
         self.connections = {
             # Chi legge dati da questa risorsa:
             #   ECS/Lambda --reads--> DynamoDB  (IAM: Get/Query/Scan)

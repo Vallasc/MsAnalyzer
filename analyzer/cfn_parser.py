@@ -44,13 +44,17 @@ class CloudFormationParser:
             if not k.startswith('_'):
                 self.parameter_values.setdefault(k, str(v))
 
-    def process_template(self, yaml_text: str, extra_params: dict = None):
+    def process_template(self, yaml_text: str, extra_params: dict = None,
+                         source_file: str = None, source_branch: str = None):
         """Pipeline completa su un singolo template YAML:
         1. Parse YAML
         2. Applica extra_params (precedenza massima)
         3. Carica Default dei Parameters del template
         4. Estrae tutte le risorse nel graph
         5. Risolve gli Outputs → nuovi parameter_values per il template successivo
+
+        Se source_file è valorizzato, registra anche file/righe sorgente di ogni
+        risorsa (per generare link a GitHub).
 
         Ritorna il dict del template o None in caso di errore.
         """
@@ -63,6 +67,10 @@ class CloudFormationParser:
 
         self._load_template_param_defaults(template)
         self._extract_all_resources(template)
+        if source_file:
+            self._assign_source(
+                self._resource_line_ranges(yaml_text), source_file, source_branch
+            )
         self._derive_outputs_as_params(template)
 
         return template
@@ -137,6 +145,74 @@ class CloudFormationParser:
             print(f"  ✗ Errore parsing YAML: {e}")
             return None
 
+    @staticmethod
+    def _resource_line_ranges(yaml_text: str) -> dict:
+        """Mappa logical_id → (start_line, end_line) 1-based, inclusive, per le
+        risorse di primo livello sotto `Resources:`.
+
+        Usa yaml.compose per accedere ai mark di riga dei nodi senza costruire
+        gli oggetti (le tag intrinseche !Sub/!Ref restano nodi grezzi)."""
+        ranges: dict = {}
+        try:
+            root = yaml.compose(yaml_text, Loader=yaml.SafeLoader)
+        except Exception:
+            return ranges
+        if not isinstance(root, yaml.MappingNode):
+            return ranges
+
+        res_node = None
+        for key_node, val_node in root.value:
+            if getattr(key_node, 'value', None) == 'Resources' \
+                    and isinstance(val_node, yaml.MappingNode):
+                res_node = val_node
+                break
+        if res_node is None:
+            return ranges
+
+        items = [
+            (k, v) for k, v in res_node.value
+            if isinstance(getattr(k, 'value', None), str)
+        ]
+        for idx, (key_node, val_node) in enumerate(items):
+            start = key_node.start_mark.line + 1
+            if idx + 1 < len(items):
+                # L'ultima riga del blocco è quella prima del prossimo fratello.
+                # start_mark.line del prossimo (0-based) coincide numericamente
+                # con l'ultima riga 1-based del blocco corrente.
+                end = items[idx + 1][0].start_mark.line
+            else:
+                em = val_node.end_mark
+                end = em.line if em.column == 0 else em.line + 1
+            if end < start:
+                end = start
+            ranges[key_node.value] = (start, end)
+        return ranges
+
+    def _assign_source(self, ranges: dict, source_file: str,
+                       source_branch: str) -> None:
+        """Assegna file/righe sorgente alle risorse appena estratte (quelle prive
+        di `source`) il cui logical_id compare nel template corrente."""
+        g = self.graph
+        resources = [
+            *g.ecs_services.values(),
+            *g.dynamodb_tables.values(),
+            *g.sqs_queues.values(),
+            *g.lambda_functions.values(),
+            *g.eventbuses.values(),
+            *g.eventbus_rules.values(),
+        ]
+        for res in resources:
+            if getattr(res, 'source', None) is not None:
+                continue
+            rng = ranges.get(res.logical_id)
+            if rng:
+                res.source = {
+                    "file": source_file,
+                    "branch": source_branch,
+                    "start": rng[0],
+                    "end": rng[1],
+                }
+
     # =========================================================================
     # VALUE RESOLUTION
     # =========================================================================
@@ -171,7 +247,7 @@ class CloudFormationParser:
     # PARAMETER LOADING
     # =========================================================================
 
-    async def load_params_github(self, owner: str, repo: str, branch: str = 'develop'):
+    def load_params_github(self, owner: str, repo: str, branch: str = 'develop'):
         """Carica i parametri dal file CFN JSON di configurazione del repo.
 
         Supporta due formati:

@@ -45,7 +45,7 @@ export function LeftPanel({
   const setFilter = useCallback((key, val) => {
     const next = { ...filters, [key]: val };
     setFilters(next);
-    lsSave(LS_OPTS, { labels: next.labels, focus: next.focus });
+    lsSave(LS_OPTS, { labels: next.labels, focus: next.focus, hideEdges: next.hideEdges });
   }, [filters, setFilters]);
 
   const toggleRel = useCallback(rel => {
@@ -147,6 +147,11 @@ export function LeftPanel({
             <input type="checkbox" checked=${filters.labels}
               onChange=${e => setFilter('labels', e.target.checked)} />
             <span>Label archi</span>
+          </label>
+          <label class="filter-row">
+            <input type="checkbox" checked=${filters.hideEdges}
+              onChange=${e => setFilter('hideEdges', e.target.checked)} />
+            <span>Nascondi archi</span>
           </label>
           <label class="filter-row">
             <input type="checkbox" checked=${filters.focus}

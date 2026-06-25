@@ -47,4 +47,5 @@ export const DEFAULT_FILTERS = {
   types:  ['ecs','lambda','sqs','dynamodb','eventbus','eventrule','external'],
   labels: false,
   focus:  true,
+  hideEdges: false,
 };
